@@ -1,16 +1,11 @@
-"""
-自动执行 SQL 的初始化脚本，核心逻辑其实就是一个“安全的文件读取与数据库交互”的过程。
-能够实现“开箱即用”
-"""
 # 第一步：导包
-#用于连接 PostgreSQL 数据库的驱动
 import psycopg2
-# 用于处理文件路径的内置库（如 os），这能防止因为相对路径或绝对路径写错而导致找不到 SQL 文件。
 import os
 from dotenv import load_dotenv
 import sys
 import logging
 
+# 获取当前脚本所在的绝对路径，用于正确加载 .env
 env_path = os.path.join(os.path.dirname(__file__), '..', '.env')
 load_dotenv(env_path)
 
@@ -19,76 +14,71 @@ load_dotenv(env_path)
 def setup_logging():
     """配置日志：同时输出到控制台和文件"""
     logger = logging.getLogger("DB_Init")
+    # 避免重复添加 handler（在热重载或多次导入时很有用）
+    if logger.handlers:
+        return logger
+        
     logger.setLevel(logging.DEBUG)
+    formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
 
-    if not logger.handlers:
-        formatter = logging.Formatter('%(asctime)s - %(levelname)s - %(message)s')
+    # 1. 控制台 Handler (只显示 INFO 以上)
+    console_handler = logging.StreamHandler()
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
 
-        # 1. 控制台 Handler (只显示 INFO 以上)
-        console_handler = logging.StreamHandler()
-        console_handler.setLevel(logging.INFO)
-        console_handler.setFormatter(formatter)
+    # 2. 文件 Handler (记录所有细节)
+    log_dir = os.path.join(os.path.dirname(__file__), 'logs')
+    if not os.path.exists(log_dir):
+        os.makedirs(log_dir)
 
-        # 2. 文件 Handler (记录所有细节)
-        log_dir = os.path.join(os.path.dirname(__file__), 'logs')
-        if not os.path.exists(log_dir):
-            os.makedirs(log_dir)
+    file_handler = logging.FileHandler(os.path.join(log_dir, 'init_db.log'), encoding='utf-8')
+    file_handler.setLevel(logging.DEBUG)
+    file_handler.setFormatter(formatter)
 
-        file_handler = logging.FileHandler(os.path.join(log_dir, 'init_db.log'), encoding='utf-8')
-        file_handler.setLevel(logging.DEBUG)
-        file_handler.setFormatter(formatter)
-
-        logger.addHandler(console_handler)
-        logger.addHandler(file_handler)
+    logger.addHandler(console_handler)
+    logger.addHandler(file_handler)
 
     return logger
-
 
 # 初始化日志
 logger = setup_logging()
 
 # 第二步：定义数据库配置参数
-# 如主机地址、端口、数据库名、用户名和密码
-DB_HOST = os.getenv("POSTGRES_HOST") #主机地址
-DB_PORT = os.getenv("POSTGRES_PORT") #端口
-DB_NAME = os.getenv("POSTGRES_DB") #数据库名
-DB_USER = os.getenv("POSTGRES_USER") #用户名
-DB_PASS = os.getenv("POSTGRES_PASSWORD") #密码
-# print("主机地址："+DB_HOST+" 端口："+DB_PORT+" 数据库名："+DB_NAME+" 用户名："+DB_USER+" 密码："+DB_PASS)
-# exit()
+DB_HOST = os.getenv("POSTGRES_HOST")
+DB_PORT = os.getenv("POSTGRES_PORT")
+DB_NAME = os.getenv("POSTGRES_DB")
+DB_USER = os.getenv("POSTGRES_USER")
+DB_PASS = os.getenv("POSTGRES_PASSWORD")
 
-# 第三步：编写读取 SQL 文件的函数
+# 第三步：读取 SQL 文件
 def read_sql_file(file_path):
     """
-    读取 SQL 文件
+    读取 SQL 文件内容
     """
-    #使用 os.path 动态获取当前脚本所在的目录，拼接出 init.sql 的绝对路径。
     try:
+        # 使用绝对路径读取，防止运行目录不同导致找不到文件
         abs_path = os.path.join(os.path.dirname(__file__), file_path)
-        logger.info(f"正在读取 SQL 文件: {abs_path}")  # 替换 print
-        # exit()
-        #使用 open() 函数打开文件并读取内容,并返回
-        with open(file_path, "r", encoding="utf-8") as f:
+        logger.info(f"正在读取 SQL 文件: {abs_path}")
+        
+        with open(abs_path, "r", encoding="utf-8") as f:
             sql = f.read()
             return sql
     except FileNotFoundError:
-        logger.error(f"文件未找到: {abs_path}")  # 替换 print
+        logger.error(f"文件未找到: {abs_path}")
         return None
     except Exception as e:
         logger.exception(f"读取文件发生未知错误: {e}")
         return None
 
-
-# 第四步：编写执行 SQL 的核心函数
-def execute_sql(sql):
+# 第四步：执行 SQL 的核心函数（优化版）
+def execute_sql(sql_content):
     """
-    执行 SQL，这是脚本的心脏，负责把读到的 SQL 发给数据库。
+    执行 SQL，支持多条语句逐条执行
     """
     connection = None
     cursor = None
     try:
-        logger.info("🔌 正在连接数据库...") # 替换 print
-        # 建立数据库连接（connect）。
+        logger.info("🔌 正在连接数据库...")
         connection = psycopg2.connect(
             host=DB_HOST,
             port=DB_PORT,
@@ -96,25 +86,45 @@ def execute_sql(sql):
             user=DB_USER,
             password=DB_PASS
         )
-        # 创建一个游标对象（cursor），它是执行 SQL 的载体
+        # 设置为自动提交 False，我们要手动控制事务
+        connection.autocommit = False
         cursor = connection.cursor()
-        logger.info("⚙️ 正在执行 SQL 语句...")
+        
+        logger.info("⚙️ 开始解析并执行 SQL 语句...")
+        
+        # 【核心修改】简单的 SQL 分割逻辑
+        # 注意：这是一个简易分割器，适用于标准的建表语句。
+        # 如果 SQL 内容包含复杂的存储过程或美元符号引用，需要更复杂的解析库（如 sqlparse）
+        statements = sql_content.split(';')
+        
+        success_count = 0
+        for statement in statements:
+            # 去除首尾空白
+            clean_statement = statement.strip()
+            # 跳过空语句（文件末尾通常会有一个分号，分割后会产生空字符串）
+            if not clean_statement:
+                continue
+                
+            try:
+                cursor.execute(clean_statement)
+                success_count += 1
+            except Exception as stmt_error:
+                # 如果某一条语句错了，打印出错的语句片段，方便调试
+                logger.error(f"❌ 执行语句失败: {clean_statement[:50]}... 错误: {stmt_error}")
+                raise stmt_error # 抛出异常，触发回滚
 
-        # 使用 execute() 方法执行 SQL
-        cursor.execute(sql)
-        # 提交事务
+        # 全部执行成功后提交
         connection.commit()
-        logger.info("✅ SQL 执行成功，事务已提交") # 替换 print
+        logger.info(f"✅ 成功执行了 {success_count} 条 SQL 语句，事务已提交")
         return True
 
     except Exception as e:
         if connection:
             connection.rollback()
-        logger.error(f"❌ SQL 执行失败: {e}")  # 使用 logger 记录错误
-        raise e  # 【关键】把错误抛出去，让主程序知道出事了，终止运行
+            logger.error("🔄 事务已回滚")
+        logger.error(f"❌ SQL 执行流程中断: {e}")
+        return False
     finally:
-        # 关闭游标和数据库连接
-        # 修复：关闭前检查对象是否存在，防止二次报错
         if cursor:
             cursor.close()
         if connection:
@@ -124,24 +134,25 @@ def execute_sql(sql):
 # 第五步：程序的入口点
 if __name__ == "__main__":
     logger.info("🚀 === 开始初始化数据库流程 ===")
-    try:
-        # 1. 读取 SQL
-        sql_content = read_sql_file("init.sql")
+    
+    # 1. 读取 SQL
+    # 注意：这里假设 init.sql 和 init_db.py 在同一级目录，或者根据实际路径调整
+    sql_content = read_sql_file("init.sql")
 
-        # 2. 判断文件是否读取成功
-        if sql_content is None:
-            logger.critical("❌ 数据库初始化失败: SQL 文件读取异常")  # 替换 print
-            sys.exit(1)
+    # 2. 判断文件是否读取成功
+    if sql_content is None:
+        logger.critical("❌ 数据库初始化失败: SQL 文件读取异常")
+        sys.exit(1)
 
-        logger.info("📄 SQL 文件已读取，准备执行...")  # 替换 print
+    logger.info("📄 SQL 文件读取完成，准备执行...")
 
-        # 3. 执行 SQL
-        success = execute_sql(sql_content)
+    # 3. 执行 SQL
+    success = execute_sql(sql_content)
 
-        # 4. 根据返回值判断结果
-        if success:
-            logger.info("🎉 === 数据库初始化成功！！ ===")  # 替换 print
-
-    except Exception as e:
-        logger.critical(f"❌ === 数据库初始化失败: {e} ===")  # 替换 print
-        sys.exit(1)  # 失败时返回非0退出码
+    # 4. 根据返回值判断结果
+    if success:
+        logger.info("🎉 === 数据库初始化成功！！ ===")
+        sys.exit(0)
+    else:
+        logger.critical("❌ === 数据库初始化失败 ===")
+        sys.exit(1)
