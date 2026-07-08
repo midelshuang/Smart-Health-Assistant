@@ -289,4 +289,9 @@ pyrightconfig.json
 # 资料数据
 raw_data/
 
+# 忽略日志文件
+*.log
+
+.idea/
+
 # End of https://www.toptal.com/developers/gitignore/api/python,pycharm
