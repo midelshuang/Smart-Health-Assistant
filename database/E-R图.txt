@@ -1,0 +1,77 @@
+erDiagram
+    %% 用户核心层
+    user_profiles ||--o{ daily_diet_logs : "records"
+    user_profiles ||--o{ chat_histories : "has"
+    user_profiles ||--o{ fitness_goals : "sets"
+
+    %% 饮食业务层
+    nutrition_facts ||--o{ daily_diet_logs : "defines nutrition for"
+
+    %% 交互反馈层
+    chat_histories ||--|| user_feedbacks : "receives feedback on"
+
+    %% 知识支撑层 (目前通过 food_name 字符串间接关联，未来可优化为 ID 关联)
+    nutrition_facts }|..|{ glycemic_index_facts : "matches by name"
+
+    user_profiles {
+        varchar user_id PK
+        jsonb health_tags
+        double bmi
+        varchar health_goal
+        varchar province
+    }
+
+    daily_diet_logs {
+        bigint id PK
+        varchar user_id FK
+        int nutrition_id FK
+        decimal quantity_grams
+        decimal calculated_calories
+        boolean ai_parsed
+    }
+
+    nutrition_facts {
+        int id PK
+        varchar food_name
+        decimal calories_per_100g
+        jsonb details
+        varchar data_source
+    }
+
+    glycemic_index_facts {
+        int id PK
+        varchar food_name
+        decimal gi_value
+        varchar food_group
+    }
+
+    chat_histories {
+        int id PK
+        uuid message_uuid UK
+        varchar session_id
+        text message_content
+        jsonb metadata
+    }
+
+    user_feedbacks {
+        int id PK
+        uuid message_id FK
+        smallint rating
+        varchar feedback_type
+    }
+
+    fitness_goals {
+        bigint id PK
+        varchar user_id FK
+        varchar goal_type
+        decimal target_value
+        varchar status
+    }
+
+    authoritative_sources {
+        int id PK
+        varchar title
+        text transcript
+        varchar source_type
+        varchar file_url
+    }

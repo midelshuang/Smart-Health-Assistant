@@ -1,62 +1,344 @@
-#配置Postgres
-#层1：版本
-version: '3.9'
-#层2：服务
+# ============================================================
+# HealthAI Platform - 生产级 Docker Compose
+# 包含：PostgreSQL + ChromaDB + Redis + FastAPI 应用
+#       + Streamlit 演示 + Prometheus 监控 + Grafana 仪表盘
+#       + Jaeger 分布式追踪
+# 启动：docker compose --env-file .env up -d
+# ============================================================
+
 services:
+  # ============================================================
+  # 1. PostgreSQL 数据库
+  # ============================================================
   db:
-    #配置postgres镜像并指定15-alpine版本
     image: postgres:15-alpine
+    restart: unless-stopped
     ports:
       - "5432:5432"
-    #配置环境变量,创建用户postgres，密码postgres
     environment:
       POSTGRES_USER: ${POSTGRES_USER}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
       POSTGRES_DB: ${POSTGRES_DB}
-      # 👇 核心魔法在这里：由 Docker Compose 负责拼接，然后注入到容器环境变量中
       DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
-    #挂载数据卷，挂载到宿主机的/data/db_data目录下，防止数据丢失
-    #创建数据卷，数据卷名称为db_data
-    #./healthchecks:/healthchecks是健康检查脚本，从本地目录healthchecks复制到容器的/healthchecks目录下
     volumes:
       - "db_data:/var/lib/postgresql/data"
-      - "./healthchecks:/healthchecks"
-    #配置网络,创建网络名称为back-tier，意思是将db服务加入到back-tier网络中，即
+      - "./healthchecks:/healthchecks:ro"
+      - "./database/init.sql:/docker-entrypoint-initdb.d/init.sql:ro"
     networks:
       - backend
     healthcheck:
       test: ["CMD-SHELL", "/bin/sh /healthchecks/postgres.sh"]
-      interval: 5s
-      timeout: 2s
-      retries: 3
-      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-  #配置ChromaDB
+  # ============================================================
+  # 2. ChromaDB 向量数据库
+  # ============================================================
   chroma:
-    image:  chromadb/chroma:latest
+    image: chromadb/chroma:latest
+    restart: unless-stopped
     ports:
-      - "8000:8000"
+      - "8001:8000"
     volumes:
       - "chroma_data:/chroma"
     networks:
       - backend
     environment:
       - IS_PERSISTENT=TRUE
+      - ANONYMIZED_TELEMETRY=FALSE
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/api/v2/heartbeat')"]
-      interval: 5s
-      timeout: 2s
-      retries: 3
-      start_period: 10s
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
-#层3：环境变量
+  # ============================================================
+  # 3. Redis 缓存
+  # ============================================================
+  redis:
+    image: redis:7-alpine
+    restart: unless-stopped
+    ports:
+      - "6379:6379"
+    command: >
+      sh -c '
+        if [ -n "$REDIS_PASSWORD" ]; then
+          redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru --requirepass "$REDIS_PASSWORD"
+        else
+          redis-server --appendonly yes --maxmemory 256mb --maxmemory-policy allkeys-lru
+        fi
+      '
+    volumes:
+      - "redis_data:/data"
+    networks:
+      - backend
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    healthcheck:
+      test: ["CMD-SHELL", "redis-cli ping | grep -q PONG"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+    deploy:
+      resources:
+        limits:
+          memory: 300M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================
+  # 4. FastAPI 应用（V1.4 新增）
+  # ============================================================
+  app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env
+    environment:
+      # 覆盖 .env 中的主机名为容器服务名
+      DATABASE_URL: postgresql://${POSTGRES_USER}:${POSTGRES_PASSWORD}@db:5432/${POSTGRES_DB}
+      CHROMA_HOST: chroma
+      CHROMA_PORT: 8000
+      REDIS_HOST: redis
+      APP_ENV: production
+      # Jaeger / OpenTelemetry 配置
+      OTEL_EXPORTER_TYPE: otlp
+      OTEL_EXPORTER_OTLP_ENDPOINT: jaeger:4317
+      OTEL_SERVICE_NAME: healthai-platform
+      OTEL_SAMPLE_RATE: "1.0"
+    volumes:
+      - "./raw_data:/app/raw_data:ro"
+      - "./logs:/app/logs"
+    networks:
+      - backend
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      chroma:
+        condition: service_healthy
+      jaeger:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-fsS", "http://localhost:8000/api/health"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+          cpus: "2.0"
+    logging:
+      driver: json-file
+      options:
+        max-size: "50m"
+        max-file: "5"
+
+  # ============================================================
+  # 5. Streamlit 演示应用（可选）
+  # ============================================================
+  streamlit:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
+    ports:
+      - "8501:8501"
+    env_file:
+      - .env
+    environment:
+      API_BASE_URL: http://app:8000
+      APP_ENV: production
+    command: >
+      python -m streamlit run streamlit_app.py
+      --server.port 8501
+      --server.address 0.0.0.0
+      --server.headless true
+      --browser.gatherUsageStats false
+    networks:
+      - backend
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8501/_stcore/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+          cpus: "0.5"
+    logging:
+      driver: json-file
+      options:
+        max-size: "20m"
+        max-file: "3"
+
+  # ============================================================
+  # 6. Prometheus 监控（采集 /metrics）
+  # ============================================================
+  prometheus:
+    image: prom/prometheus:latest
+    restart: unless-stopped
+    ports:
+      - "9090:9090"
+    volumes:
+      - "./prometheus.yml:/etc/prometheus/prometheus.yml:ro"
+      - "prometheus_data:/prometheus"
+    command:
+      - "--config.file=/etc/prometheus/prometheus.yml"
+      - "--storage.tsdb.path=/prometheus"
+      - "--storage.tsdb.retention.time=15d"
+      - "--web.console.libraries=/usr/share/prometheus/console_libraries"
+      - "--web.console.templates=/usr/share/prometheus/consoles"
+      - "--web.enable-lifecycle"
+    networks:
+      - backend
+    depends_on:
+      app:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:9090/-/healthy"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================
+  # 7. Grafana 仪表盘（可视化 /metrics）
+  # ============================================================
+  grafana:
+    image: grafana/grafana:latest
+    restart: unless-stopped
+    ports:
+      - "3000:3000"
+    environment:
+      # 首次启动自动创建 admin 用户
+      GF_SECURITY_ADMIN_USER: ${GRAFANA_ADMIN_USER:-admin}
+      GF_SECURITY_ADMIN_PASSWORD: ${GRAFANA_ADMIN_PASSWORD:-admin}
+      # 禁止首次启动修改密码弹窗
+      GF_AUTH_DISABLE_LOGIN_FORM: "false"
+      # 允许匿名访问仪表盘（仅查看，编辑需登录）
+      GF_AUTH_ANONYMOUS_ENABLED: "true"
+      GF_AUTH_ANONYMOUS_ORG_ROLE: "Viewer"
+      # 自动加载 provisioning 配置
+      GF_PATHS_PROVISIONING: /etc/grafana/provisioning
+    volumes:
+      - "grafana_data:/var/lib/grafana"
+      - "./grafana/provisioning:/etc/grafana/provisioning:ro"
+      - "./grafana/dashboards:/var/lib/grafana/dashboards:ro"
+    networks:
+      - backend
+    depends_on:
+      prometheus:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD-SHELL", "wget --quiet --tries=1 --spider http://localhost:3000/api/health || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================
+  # 8. Jaeger 分布式追踪
+  # ============================================================
+  jaeger:
+    image: jaegertracing/all-in-one:latest
+    restart: unless-stopped
+    ports:
+      - "16686:16686"   # Jaeger UI
+      - "4317:4317"     # OTLP gRPC (app -> jaeger)
+      - "4318:4318"     # OTLP HTTP
+      - "14268:14268"   # Jaeger HTTP collector
+      - "14250:14250"   # Jaeger gRPC collector
+      - "5778:5778"     # Config REST
+    environment:
+      - COLLECTOR_OTLP_ENABLED=true
+      - QUERY_BASE_PATH=/
+    networks:
+      - backend
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--tries=1", "--spider", "http://localhost:14269/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
+      start_period: 30s
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+# ============================================================
+# 数据卷
+# ============================================================
 volumes:
   db_data:
   chroma_data:
+  redis_data:
+  prometheus_data:
+  grafana_data:
 
+# ============================================================
+# 网络
+# ============================================================
 networks:
   backend:
-
-
-
-
+    driver: bridge

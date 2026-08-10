@@ -1,0 +1,40 @@
+graph TD
+    subgraph Client_Layer [客户端层]
+        User[👤 用户终端] -->|输入饮食/健康咨询| API_Gateway[⚡ API 网关]
+    end
+
+    subgraph Application_Layer [应用服务层 - Python/FastAPI]
+        API_Gateway --> Auth[🔐 身份认证]
+        API_Gateway --> Chat_Engine[💬 对话引擎]
+        API_Gateway --> Diet_Manager[🥗 饮食记录管理]
+        API_Gateway --> Goal_Tracker[🎯 目标追踪器]
+
+        Chat_Engine --> RAG_Module[🧠 RAG 检索模块]
+        Diet_Manager --> Calc_Engine[🧮 热量计算引擎]
+    end
+
+    subgraph Data_Access_Layer [数据访问层 - SQLAlchemy ORM]
+        Auth --> DB_Pool[(PostgreSQL 连接池)]
+        Chat_Engine --> DB_Pool
+        Diet_Manager --> DB_Pool
+        Goal_Tracker --> DB_Pool
+        RAG_Module --> Vector_DB[(ChromaDB / 向量库)]
+    end
+
+    subgraph Storage_Layer [持久化存储层]
+        DB_Pool --> Core_Tables[📦 核心业务表]
+        DB_Pool --> Knowledge_Base[📚 知识库表]
+
+        Core_Tables --- T1[user_profiles]
+        Core_Tables --- T2[daily_diet_logs]
+        Core_Tables --- T3[chat_histories]
+        Core_Tables --- T4[fitness_goals]
+
+        Knowledge_Base --- K1[nutrition_facts]
+        Knowledge_Base --- K2[authoritative_sources]
+        Knowledge_Base --- K3[glycemic_index_facts]
+    end
+
+    style User fill:#f9f,stroke:#333,stroke-width:2px
+    style RAG_Module fill:#ff9,stroke:#333,stroke-width:2px
+    style Core_Tables fill:#ccf,stroke:#333,stroke-width:2px

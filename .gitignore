@@ -295,3 +295,18 @@ raw_data/
 .idea/
 
 # End of https://www.toptal.com/developers/gitignore/api/python,pycharm
+# ============================================================
+# HealthAI 项目专属忽略规则
+# ============================================================
+
+# 生成数据与本地存储
+chroma_db/
+raw_data/
+
+# 临时文件
+openapi_temp.json
+ingest_expert_progress.json
+.test_deps/
+
+# 本地配置（含可能的环境差异）
+config.yaml

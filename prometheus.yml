@@ -1,0 +1,46 @@
+# HealthAI Platform - Prometheus 抓取配置
+# 启动: docker run -d --name prometheus -p 9090:9090 \
+#        -v ./prometheus.yml:/etc/prometheus/prometheus.yml:ro \
+#        prom/prometheus:latest
+
+global:
+  scrape_interval: 15s      # 默认 15s 抓取一次
+  evaluation_interval: 15s  # 规则评估间隔
+
+# 告警规则（可选）
+# rule_files:
+#   - "alerts.yml"
+
+# 抓取目标
+scrape_configs:
+  # ----------------------------------------------------------
+  # HealthAI FastAPI 应用
+  # /metrics 端点由 prometheus_client 暴露
+  # ----------------------------------------------------------
+  - job_name: 'healthai-app'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['app:8000']
+        labels:
+          service: 'healthai'
+          env: 'production'
+    # 容器内访问 app 服务的 /metrics
+    # 如在主机运行 Prometheus，请改为 ['localhost:8000']
+
+  # ----------------------------------------------------------
+  # 可选：抓取 Streamlit 应用（如暴露指标）
+  # ----------------------------------------------------------
+  - job_name: 'healthai-streamlit'
+    metrics_path: '/metrics'
+    static_configs:
+      - targets: ['streamlit:8501']
+        labels:
+          service: 'streamlit'
+          env: 'production'
+
+  # ----------------------------------------------------------
+  # 可选：Prometheus 自监控
+  # ----------------------------------------------------------
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
