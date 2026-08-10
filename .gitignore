@@ -310,3 +310,9 @@ ingest_expert_progress.json
 
 # 本地配置（含可能的环境差异）
 config.yaml
+
+# IDE 专属目录（Trae 文档等）
+.trae/
+
+# Office 临时锁文件
+~$*
