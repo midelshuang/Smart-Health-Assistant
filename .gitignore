@@ -321,8 +321,12 @@ tests/perf/reports/
 # Office temp lock files
 ~$*
 
-# Project documentation (keep local, do not upload to GitHub)
-docs/
+# Project documentation (selective upload: main docs only, reports stay local)
+docs/REPORT_STREAMING.md
+docs/expert_media_report.md
+docs/nutrition_data_report.md
+docs/pdf_cleaning_report.md
+docs/可复用组件清单.md
 
 # Root-level temporary scripts (removed or relocated)
 /check_kb.py
