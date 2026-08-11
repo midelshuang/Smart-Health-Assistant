@@ -1,5 +1,13 @@
 """
 修正异常的营养成分数据
+
+执行顺序（ETL 流水线）：
+    1. clean_nutrition_data.py   ← 清洗 + 补算热量
+    2. fix_abnormal_data.py      ← 本脚本：修正异常高热量（>900kcal）和异常宏量营养素（>100g）
+    3. fill_missing_calories.py  ← 补充本步骤清空后的热量缺失
+
+本脚本会清空异常值（protein/fat/calories 设为 NULL）并标记 data_source 为 _NEEDS_REVIEW，
+因此执行后会有部分记录热量缺失，需要 fill_missing_calories.py 重新计算。
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

@@ -1,5 +1,13 @@
 """
 补充剩余缺失的热量数据
+
+执行顺序（ETL 流水线）：
+    1. clean_nutrition_data.py   ← 清洗 + 补算热量
+    2. fix_abnormal_data.py      ← 修正异常值（会清空部分热量）
+    3. fill_missing_calories.py  ← 本脚本：补充 fix 步骤清空后的热量缺失
+
+本脚本处理 fix_abnormal_data.py 执行后产生的 NULL 热量记录，
+用 Atwater 公式（4*蛋白质 + 9*脂肪 + 4*碳水）重新计算。
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

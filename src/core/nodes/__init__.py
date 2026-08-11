@@ -11,15 +11,42 @@ RAG 管道节点定义
 4. vector_retriever_node   —— 非结构化知识检索（ChromaDB 向量）
 5. generator_node          —— 答案生成（LLM + 检索上下文）
 6. evaluator_node          —— 检索质量评估（决定是否改写重试）
+
+性能优化（2026-08-10）：
+- 第1层：接入节点级缓存（Embedding/改写/安全/食物检索）
+- 第2层：跳过不必要的 LLM 调用（简单 query 跳过改写/高质量结果跳过评估）
+- 第3层：并行执行（多路 Embedding 并行计算）
 """
 
 from typing import Dict, Any, List, Optional
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from sqlalchemy.orm import Session
 from src.models.db_models import NutritionFact
 from src.config import settings
 from src.utils.logger import setup_logger
 
 logger = setup_logger(name="RAG_Nodes")
+
+
+# 缓存模块（延迟导入，避免循环依赖）
+def _get_cache_service():
+    """获取缓存服务（延迟导入）"""
+    from src.services.cache_service import (
+        get_cached_embedding, set_cached_embedding,
+        get_cached_food_search, set_cached_food_search,
+        get_cached_safety, set_cached_safety,
+        get_cached_query, set_cached_query,
+    )
+    return {
+        "get_embedding": get_cached_embedding,
+        "set_embedding": set_cached_embedding,
+        "get_food": get_cached_food_search,
+        "set_food": set_cached_food_search,
+        "get_safety": get_cached_safety,
+        "set_safety": set_cached_safety,
+        "get_query": get_cached_query,
+        "set_query": set_cached_query,
+    }
 
 
 # ============================================================
@@ -206,8 +233,9 @@ def query_rewriter_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     Query 改写节点
 
-    使用 LLM 对用户原始查询进行改写，提升在向量检索和 SQL 检索中的召回率。
-    如果 LLM 不可用，则退化为使用原始查询。
+    性能优化（2026-08-10）：
+    1. 接入改写缓存：相同 query 第二次直接命中缓存
+    2. 跳过简单查询：query < 15 字符且无生僻词时，直接用原 query，省掉 LLM 调用
 
     Args:
         state: 当前 RAGState 字典
@@ -221,6 +249,27 @@ def query_rewriter_node(state: Dict[str, Any]) -> Dict[str, Any]:
     if not original_query:
         return {"rewritten_query": "", "rewrite_count": rewrite_count}
 
+    # ---- 第2层优化：简单查询直接跳过改写 ----
+    if len(original_query) < 15:
+        logger.info(f"简单查询跳过改写: '{original_query}' (len={len(original_query)})")
+        return {
+            "rewritten_query": original_query,
+            "rewrite_count": rewrite_count + 1,
+            "skip_rewrite": True,
+        }
+
+    # ---- 第1层优化：改写缓存检查 ----
+    cache = _get_cache_service()
+    cache_key = f"rewrite:{original_query}"
+    cached = cache["get_query"](cache_key)
+    if cached and cached.get("rewritten_query"):
+        logger.info(f"改写缓存命中: '{original_query}' → '{cached['rewritten_query']}'")
+        return {
+            "rewritten_query": cached["rewritten_query"],
+            "rewrite_count": rewrite_count + 1,
+            "_from_cache": True,
+        }
+
     try:
         from src.core.llm_client import get_llm_client
         llm_client = get_llm_client()
@@ -230,6 +279,8 @@ def query_rewriter_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
         if rewritten and rewritten.strip():
             logger.info(f"Query 改写: '{original_query}' → '{rewritten.strip()}'")
+            # 写入改写缓存
+            cache["set_query"](cache_key, {"rewritten_query": rewritten.strip()})
             return {
                 "rewritten_query": rewritten.strip(),
                 "rewrite_count": rewrite_count + 1,
@@ -251,8 +302,8 @@ def sql_retriever_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     SQL 检索节点
 
-    根据改写后的查询，在 PostgreSQL 中进行结构化食物数据检索。
-    使用模糊匹配（ILIKE / contains）查找 NutritionFact 表中的食物。
+    性能优化（2026-08-10）：
+    1. 接入食物检索缓存：相同 query 第二次直接命中缓存，跳过 SQL 查询
 
     Args:
         state: 当前 RAGState 字典
@@ -265,6 +316,17 @@ def sql_retriever_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
     if not query:
         return {"sql_results": [], "sql_query": ""}
+
+    # ---- 第1层优化：食物检索缓存检查 ----
+    cache = _get_cache_service()
+    cached_results = cache["get_food"](query.lower(), limit=20)
+    if cached_results is not None:
+        logger.info(f"食物检索缓存命中: query='{query}'")
+        return {
+            "sql_results": cached_results,
+            "sql_query": f"[CACHED] {query}",
+            "_from_cache": True,
+        }
 
     from src.repositories.session import SessionLocal
     db = SessionLocal()
@@ -321,6 +383,14 @@ def sql_retriever_node(state: Dict[str, Any]) -> Dict[str, Any]:
             })
 
         logger.info(f"SQL 检索完成: 查询='{query}', 命中 {len(sql_results)} 条结果")
+
+        # ---- 第1层优化：写入食物检索缓存 ----
+        if sql_results:
+            try:
+                cache["set_food"](query.lower(), sql_results, limit=20)
+            except Exception as e:
+                logger.warning(f"食物检索缓存写入失败: {e}")
+
         return {
             "sql_results": sql_results,
             "sql_query": sql_query,
@@ -531,13 +601,9 @@ def vector_retriever_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     向量检索节点（向量语义 + 关键词匹配 混合检索 + RRF 融合）
 
-    混合策略：
-    - 路径 1: 向量语义检索（改写查询 + 原查询多路）
-    - 路径 2: 关键词检索（基于 metadata 过滤 + 词频匹配）
-    - RRF 融合两路结果，最大化召回率
-
-    支持 source_type、age_group、region 元数据过滤，
-    可限定只检索特定年龄组和地区的指南文档。
+    性能优化（2026-08-10）：
+    1. 接入 Embedding 缓存：相同 query 的向量第二次直接命中缓存
+    2. 第3层优化：Embedding 计算前先查缓存，减少 API 调用
 
     Args:
         state: 当前 RAGState 字典
@@ -564,6 +630,19 @@ def vector_retriever_node(state: Dict[str, Any]) -> Dict[str, Any]:
         vector_store.get_or_create_collection(embedding_function=embedding_fn)
         collection = vector_store.collection
 
+        # ---- 第1层优化：Embedding 缓存 + 预计算 ----
+        cache = _get_cache_service()
+
+        def get_cached_embedding(text: str) -> List[float]:
+            """带缓存的 query embedding 计算"""
+            cached = cache["get_embedding"](text)
+            if cached is not None:
+                logger.debug(f"Embedding 缓存命中: '{text[:30]}'")
+                return cached
+            result = embedding_fn.embed_query(text)
+            cache["set_embedding"](text, result)
+            return result
+
         # 构建过滤条件（两阶段检索阶段2：用 selected_guidelines 锁定指南）
         where_filter = None
         selected_guidelines = state.get("selected_guidelines") or []
@@ -580,14 +659,32 @@ def vector_retriever_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
         logger.info(f"向量多路检索: {len(vector_multi_queries)} 路, queries={vector_multi_queries}")
 
+        # ---- 第3层优化：多路 Embedding 并行计算 ----
+        def compute_embedding_for_query(q: str) -> tuple:
+            """为单个 query 计算带缓存的 embedding"""
+            emb = get_cached_embedding(q)
+            return (q, emb)
+
+        # 使用线程池并行计算多路 embedding（最多 4 并发）
+        query_embeddings = {}
+        with ThreadPoolExecutor(max_workers=min(4, len(vector_multi_queries))) as executor:
+            futures = {
+                executor.submit(compute_embedding_for_query, q): q
+                for q in vector_multi_queries
+            }
+            for future in as_completed(futures):
+                q, emb = future.result()
+                query_embeddings[q] = emb
+
+        # 使用预计算的 embedding 进行检索
         vector_multi_results = []
         for q in vector_multi_queries:
+            q_embedding = query_embeddings.get(q)
             results = vector_store.similarity_search(
-                query_text=q,
+                query_embedding=q_embedding,
                 top_k=settings.RAG_TOP_K,
                 threshold=settings.RAG_SIMILARITY_THRESHOLD,
                 where=where_filter,
-                embedding_function=embedding_fn,
             )
             vector_multi_results.append({"query": q, "results": results})
 
@@ -682,6 +779,9 @@ def generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     答案生成节点
 
+    性能优化（2026-08-10）：
+    1. 接入节点级耗时日志，定位 LLM 调用瓶颈
+
     策略：
     1. 优先使用知识库检索结果（SQL + 向量）生成答案，标注来源
     2. 如果知识库无结果，使用 LLM 通用知识回答，标注「AI生成」
@@ -693,16 +793,23 @@ def generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     Returns:
         包含 generated_answer、sources 和 answer_source 字段的状态更新字典
     """
+    import time as _time
+    _t_node_start = _time.perf_counter()
+
     query = state.get("original_query", "")
     sql_results = state.get("sql_results", [])
     vector_results = state.get("vector_results", [])
     feedback_directive = state.get("feedback_style_directive", "")
+    intent = state.get("intent", "unknown")
 
     has_kb_data = bool(sql_results or vector_results)
     answer_source = "knowledge_base" if has_kb_data else "llm_generated"
 
+    # ---- 阶段1：上下文格式化 ----
+    _t_fmt_start = _time.perf_counter()
     sql_context = _format_sql_context(sql_results)
     vector_context = _format_vector_context(vector_results)
+    _fmt_ms = (_time.perf_counter() - _t_fmt_start) * 1000
 
     # 构建来源列表
     sources = []
@@ -744,7 +851,12 @@ def generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "score": "-",
         })
 
-    logger.info(f"答案生成策略: {answer_source}, KB数据: SQL={len(sql_results)}条 向量={len(vector_results)}条")
+    _prompt_len = len(prompt) + len(system_prompt)
+    logger.info(
+        f"⏱️ [GENERATOR-START] intent={intent} | 来源={answer_source} | "
+        f"SQL={len(sql_results)}条 向量={len(vector_results)}条 | "
+        f"上下文格式化={_fmt_ms:.1f}ms | prompt长度={_prompt_len}字符"
+    )
 
     # 流式模式：跳过 LLM 调用，由 pipeline 的 stream_answer 接管生成
     if state.get("stream_mode", False):
@@ -759,6 +871,7 @@ def generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "_stream_system_prompt": system_prompt,
         }
 
+    # ---- 阶段2：LLM 调用（主要耗时点）----
     try:
         from src.core.llm_client import get_llm_client
         llm_client = get_llm_client()
@@ -768,9 +881,15 @@ def generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
             {"role": "user", "content": prompt},
         ]
 
+        _t_llm_start = _time.perf_counter()
         answer = llm_client.chat(messages, temperature=0.7, max_tokens=settings.LLM_MAX_TOKENS)
+        _llm_ms = (_time.perf_counter() - _t_llm_start) * 1000
 
-        logger.info(f"答案生成完成: 来源={answer_source}, 长度={len(answer)} 字符")
+        _total_ms = (_time.perf_counter() - _t_node_start) * 1000
+        logger.info(
+            f"⏱️ [GENERATOR-END] 总耗时={_total_ms:.0f}ms | LLM调用={_llm_ms:.0f}ms | "
+            f"上下文格式化={_fmt_ms:.1f}ms | 答案长度={len(answer)}字符 | intent={intent}"
+        )
         return {
             "generated_answer": answer,
             "sources": sources,
@@ -797,7 +916,9 @@ def evaluator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     评估节点
 
-    检查检索结果的质量，判断是否需要改写查询并重试。
+    性能优化（2026-08-10）：
+    1. 跳过高质量结果评估：当 top-3 分数均 > 0.7 时，直接通过，省掉 LLM 调用
+
     评估标准：
     1. SQL 结果或向量结果至少有一项非空
     2. 向量结果的相似度分数是否达到阈值
@@ -814,6 +935,19 @@ def evaluator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     rewrite_count = state.get("rewrite_count", 0)
     max_rewrite = state.get("max_rewrite_count", settings.RAG_MAX_REWRITE)
     intent = state.get("intent", "unknown")
+
+    # ---- 第2层优化：高质量结果直接跳过评估 ----
+    if vector_results and len(vector_results) >= 3:
+        top3_scores = [r.get("score", 0) for r in vector_results[:3]]
+        if all(s > 0.7 for s in top3_scores):
+            logger.info(
+                f"高质量结果跳过评估: top3_scores={[round(s, 3) for s in top3_scores]}"
+            )
+            return {
+                "eval_passed": True,
+                "eval_feedback": "高质量结果，跳过评估",
+                "skip_eval": True,
+            }
 
     eval_passed = True
     feedback = ""
@@ -939,21 +1073,41 @@ def safety_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     安全护栏节点
 
-    在 RAG 流程最前端对用户查询进行双重校验：
-    1. 正则规则匹配（快速拦截明确的高危请求）
-    2. LLM 语义判断（处理隐晦、变体表达）
+    性能优化（2026-08-10）：
+    1. 接入安全缓存：相同 query 第二次直接命中缓存，跳过正则+LLM双重校验
 
-    若命中拦截：
-    - 设置 safety_blocked=True
-    - 直接返回标准化拒绝回复，跳过后续所有节点
+    Args:
+        state: 当前 RAGState 字典
 
-    特殊处理：
-    - 计划生成类请求（减肥/减脂/增肌等）属于健康生活咨询，前置放行
+    Returns:
+        包含 safety_blocked 字段的状态更新字典
     """
     from src.core.safety_checker import check_safety, build_safety_reply
 
     query = state.get("original_query", "")
     logger.info(f"安全护栏检查: query='{query[:50]}'")
+
+    # ---- 第1层优化：安全缓存检查 ----
+    cache = _get_cache_service()
+    cached_safety = cache["get_safety"](query)
+    if cached_safety is not None:
+        logger.info(f"安全缓存命中: query='{query[:50]}', blocked={cached_safety.get('is_safe')}")
+        if not cached_safety.get("is_safe", True):
+            reply = cached_safety.get("reply", "")
+            return {
+                "safety_blocked": True,
+                "safety_category": cached_safety.get("category", "other"),
+                "safety_reason": cached_safety.get("reason", ""),
+                "generated_answer": reply,
+                "sources": [],
+                "intent": "blocked",
+                "_from_cache": True,
+            }
+        return {
+            "safety_blocked": False,
+            "safety_category": "none",
+            "_from_cache": True,
+        }
 
     # ========== 前置放行：计划生成类请求 ==========
     # 减肥/减脂/增肌/健身计划是健康生活咨询，不属于医疗行为
@@ -966,6 +1120,24 @@ def safety_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
     ]
     if any(kw in query for kw in plan_kw):
         logger.info(f"前置放行: 命中计划生成关键词，query='{query[:50]}'")
+        # 写入安全缓存（放行结果）
+        cache["set_safety"](query, {"is_safe": True, "category": "plan_gen"})
+        return {
+            "safety_blocked": False,
+            "safety_category": "none",
+        }
+
+    # ========== 前置放行：食物营养查询类请求 ==========
+    # 查询食物热量/蛋白质/脂肪等营养成分是纯数据查询，不涉及医疗建议
+    # 在这里快速识别并放行，跳过 LLM 慢审（可省 16 秒）
+    food_nutrition_kw = [
+        "热量", "蛋白质", "脂肪", "碳水", "碳水化合物", "营养", "营养成分",
+        "卡路里", "大卡", "kcal", "含量", "多少克", "升糖", "gi", "血糖",
+        "膳食纤维", "维生素", "矿物质", "钠", "钙", "铁", "锌",
+    ]
+    if any(kw in query for kw in food_nutrition_kw):
+        logger.info(f"前置放行: 命中食物营养关键词，query='{query[:50]}'")
+        cache["set_safety"](query, {"is_safe": True, "category": "food_nutrition"})
         return {
             "safety_blocked": False,
             "safety_category": "none",
@@ -981,6 +1153,13 @@ def safety_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
             f"安全拦截触发: category={safety_result.get('category')}, "
             f"method={safety_result.get('method')}"
         )
+        # 写入安全缓存（拦截结果）
+        cache["set_safety"](query, {
+            "is_safe": False,
+            "category": safety_result.get("category", "other"),
+            "reason": safety_result.get("reason", ""),
+            "reply": reply,
+        })
         return {
             "safety_blocked": True,
             "safety_category": safety_result.get("category", "other"),
@@ -992,6 +1171,8 @@ def safety_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
     # 通过安全校验
     logger.info("安全校验通过")
+    # 写入安全缓存（放行结果）
+    cache["set_safety"](query, {"is_safe": True, "category": "none"})
     return {
         "safety_blocked": False,
         "safety_category": "none",

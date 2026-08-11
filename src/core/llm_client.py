@@ -130,6 +130,12 @@ class LLMClient:
             "max_tokens": max_tokens,
         }
 
+        # ---- 耗时埋点：记录 LLM 调用耗时 ----
+        import time as _time
+        _t0 = _time.perf_counter()
+        _msg_preview = (messages[-1].get("content", "")[:50] + "...") if messages and messages[-1].get("content") else ""
+        _attempt_count = [0]  # 用 list 闭包可变
+
         # ---- tenacity 装饰器写法（函数级闭包，避免类方法装饰器问题）----
         @retry(
             stop=stop_after_attempt(_MAX_RETRIES + 1),  # 1 次初始 + 3 次重试 = 共 4 次
@@ -142,6 +148,7 @@ class LLMClient:
             reraise=False,
         )
         def _chat_with_retry() -> str:
+            _attempt_count[0] += 1
             response = self._http_request(
                 endpoint="/chat/completions",
                 payload=payload,
@@ -152,9 +159,20 @@ class LLMClient:
             return ""
 
         try:
-            return _chat_with_retry()
+            result = _chat_with_retry()
+            _elapsed = (_time.perf_counter() - _t0) * 1000
+            _result_len = len(result) if result else 0
+            logger.info(
+                f"⏱️ [LLM-CHAT] 耗时={_elapsed:.0f}ms | 尝试次数={_attempt_count[0]} | "
+                f"模型={self.model} | 输出长度={_result_len} | 输入预览='{_msg_preview}'"
+            )
+            return result
         except Exception as e:
-            logger.error(f"LLM chat 调用最终失败（已重试 {_MAX_RETRIES} 次）: {e}")
+            _elapsed = (_time.perf_counter() - _t0) * 1000
+            logger.error(
+                f"⏱️ [LLM-CHAT-FAIL] 耗时={_elapsed:.0f}ms | 尝试次数={_attempt_count[0]} | "
+                f"错误: {e}"
+            )
             return ""
 
     def stream_chat(
@@ -260,6 +278,9 @@ class LLMClient:
         Returns:
             响应 JSON 字典
         """
+        import time as _time
+        _t_total = _time.perf_counter()
+
         url = f"{self.base_url.rstrip('/')}{endpoint}"
 
         data = json.dumps(payload, ensure_ascii=False).encode("utf-8")
@@ -273,16 +294,35 @@ class LLMClient:
 
         req = urllib.request.Request(url, data=data, headers=headers, method="POST")
 
+        # 记录请求大小
+        _req_size = len(data)
+
         try:
+            _t_connect = _time.perf_counter()
             with urllib.request.urlopen(req, timeout=60) as resp:
+                _t_read_start = _time.perf_counter()
+                _connect_ms = (_t_read_start - _t_connect) * 1000
                 body = resp.read().decode("utf-8")
+                _read_ms = (_time.perf_counter() - _t_read_start) * 1000
+                _total_ms = (_time.perf_counter() - _t_total) * 1000
+                _resp_size = len(body)
+                logger.info(
+                    f"⏱️ [LLM-HTTP] 总耗时={_total_ms:.0f}ms | 连接={_connect_ms:.0f}ms | "
+                    f"读取={_read_ms:.0f}ms | 请求={_req_size}B | 响应={_resp_size}B | "
+                    f"endpoint={endpoint}"
+                )
                 return json.loads(body)
         except urllib.error.HTTPError as e:
+            _total_ms = (_time.perf_counter() - _t_total) * 1000
             error_body = e.read().decode("utf-8") if e.fp else ""
-            logger.error(f"LLM API HTTP 错误 {e.code}: {error_body}")
+            logger.error(
+                f"⏱️ [LLM-HTTP-FAIL] 总耗时={_total_ms:.0f}ms | HTTP {e.code} | "
+                f"错误: {error_body[:200]}"
+            )
             raise
         except urllib.error.URLError as e:
-            logger.error(f"LLM API 连接错误: {e}")
+            _total_ms = (_time.perf_counter() - _t_total) * 1000
+            logger.error(f"⏱️ [LLM-HTTP-FAIL] 总耗时={_total_ms:.0f}ms | 连接错误: {e}")
             raise
 
     def chat_with_tools(

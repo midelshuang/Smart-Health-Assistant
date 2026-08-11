@@ -1,6 +1,14 @@
 """
 营养成分数据清洗脚本
 职责：处理缺失值、标准化食物名称、补充默认值
+
+执行顺序（ETL 流水线）：
+    1. clean_nutrition_data.py   ← 本脚本：清洗 + 补算热量（4P+9F+4C）
+    2. fix_abnormal_data.py      ← 修正异常高热量（>900kcal）和异常宏量营养素（>100g）
+    3. fill_missing_calories.py  ← 补充 fix 步骤清空后的热量缺失
+
+注意：三脚本有依赖关系，必须按顺序执行。fix 步骤会清空异常值，
+导致部分记录热量为 NULL，需要 fill 步骤重新计算。
 """
 import sys, os
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

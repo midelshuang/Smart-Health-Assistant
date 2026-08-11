@@ -2,9 +2,9 @@
 
 [![Python](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/)
 [![FastAPI](https://img.shields.io/badge/FastAPI-0.115-009688.svg)](https://fastapi.tiangolo.com/)
-[![LangGraph](https://img.shields.io/badge/LangGraph-0.2-FF6B6B.svg)](https://langchain-ai.github.io/langgraph/)
+[![LangGraph](https://img.shields.io/badge/LangGraph-1.x-FF6B6B.svg)](https://langchain-ai.github.io/langgraph/)
 [![PostgreSQL](https://img.shields.io/badge/PostgreSQL-15-336791.svg)](https://www.postgresql.org/)
-[![ChromaDB](https://img.shields.io/badge/ChromaDB-0.5-4793E4.svg)](https://www.trychroma.com/)
+[![ChromaDB](https://img.shields.io/badge/ChromaDB-1.x-4793E4.svg)](https://www.trychroma.com/)
 [![Redis](https://img.shields.io/badge/Redis-7-DC382D.svg)](https://redis.io/)
 [![Docker](https://img.shields.io/badge/Docker-ready-2496ED.svg)](https://www.docker.com/)
 [![Tests](https://img.shields.io/badge/tests-422%20passed-4CAF50.svg)](#测试)
@@ -78,11 +78,11 @@
 | 类别         | 技术                            | 版本             |
 | ------------ | ------------------------------- | ---------------- |
 | Web 框架     | FastAPI                         | 0.115            |
-| AI 编排      | LangGraph + LangChain           | 0.2 / 0.3        |
+| AI 编排      | LangGraph + LangChain           | 1.2 / 1.3        |
 | LLM          | GPT-4o-mini / 兼容 API          | -                |
 | Embedding    | text-embedding-3-small (1024维) | -                |
 | 关系型数据库 | PostgreSQL                      | 15               |
-| 向量数据库   | ChromaDB                        | 0.5              |
+| 向量数据库   | ChromaDB                        | 1.x (1.5.9)      |
 | 缓存         | Redis                           | 7                |
 | 监控         | Prometheus + Grafana            | latest           |
 | 容器化       | Docker Compose                  | v2               |
@@ -139,20 +139,17 @@ HealthAI-Platform/
 │   │   ├── unified_reindex.py    # 统一入库（指南/食品/GI/专家）
 │   │   ├── import_gi.py          # GI 升糖指数 ETL
 │   │   ├── import_nutrition.py   # 营养成分 ETL
-│   │   ├── reindex_guidelines.py # 重建指南索引
-│   │   ├── seed_knowledge_base.py # 种子数据导入
-│   │   └── update_guide_metadata.py # 更新指南元数据
+│   │   └── seed_knowledge_base.py # 种子数据导入
 │   ├── etl/                      # 数据清洗脚本
-│   │   ├── clean_nutrition_data.py # 营养数据清洗
-│   │   ├── fix_abnormal_data.py  # 异常数据修正
-│   │   └── fill_missing_calories.py # 缺失热量补充
+│   │   ├── clean_nutrition_data.py # 营养数据清洗（步骤1）
+│   │   ├── fix_abnormal_data.py  # 异常数据修正（步骤2）
+│   │   └── fill_missing_calories.py # 缺失热量补充（步骤3）
 │   ├── verify/                   # 验证脚本
 │   │   ├── verify_ingestion.py   # 入库一致性验证
 │   │   ├── check_kb_guides.py    # 指南检查
 │   │   └── final_nutrition_report.py # 数据质量报告
 │   └── utils/                    # 工具脚本
-│       ├── clear_cache.py        # Redis 缓存清理
-│       └── _clear_cache.py       # RAG 缓存清理
+│       └── clear_cache.py        # Redis 缓存清理
 ├── tests/                        # 测试（分层组织）
 │   ├── unit/                     # 单元测试
 │   ├── integration/              # 集成测试
@@ -336,7 +333,7 @@ START
                          END
 ```
 
-**详细节点说明** → [src/core/nodes/__init__.py](src/core/nodes/__init__.py)
+**详细节点说明** → [src/core/nodes/**init**.py](src/core/nodes/__init__.py)
 
 ---
 
@@ -344,12 +341,13 @@ START
 
 系统采用**双重校验**机制拦截违规医疗咨询：
 
-| 校验层 | 方式 | 延迟 | 用途 |
-| ------ | ---- | ---- | ---- |
+| 校验层 | 方式         | 延迟  | 用途                 |
+| ------ | ------------ | ----- | -------------------- |
 | 第一层 | 正则规则匹配 | < 5ms | 快速拦截明确违规内容 |
-| 第二层 | LLM 语义判断 | < 1s | 识别隐晦违规请求 |
+| 第二层 | LLM 语义判断 | < 1s  | 识别隐晦违规请求     |
 
 **可拦截类别**：
+
 - `prescription_drug` — 处方药请求
 - `diagnosis_request` — 诊断请求
 - `extreme_diet` — 极端饮食
@@ -357,6 +355,7 @@ START
 - `special_population_intervention` — 特殊人群干预
 
 **规则热更新**：
+
 ```bash
 # 编辑 config/safety_rules.yaml 后自动生效（5 秒内）
 curl -X POST http://localhost:8000/api/v1/admin/safety-rules/reload
@@ -396,15 +395,15 @@ python scripts/verify/final_nutrition_report.py
 
 ## 📚 文档
 
-| 文档 | 说明 |
-| ---- | ---- |
-| [ARCHITECTURE.md](docs/ARCHITECTURE.md) | 系统架构、混合检索、语义分块、双写存储 |
-| [SCRIPTS_GUIDE.md](docs/SCRIPTS_GUIDE.md) | 运维脚本功能详解 |
-| [PROJECT_INTRO.md](docs/PROJECT_INTRO.md) | 项目介绍与宣传材料 |
-| [DEPLOYMENT.md](docs/DEPLOYMENT.md) | Docker 部署、数据备份 |
-| [OPERATIONS.md](docs/OPERATIONS.md) | 监控告警、故障排查 |
-| [USER_MANUAL.md](docs/USER_MANUAL.md) | API 使用、多轮对话 |
-| [DEVELOPMENT.md](docs/DEVELOPMENT.md) | 开发文档 |
+| 文档                                      | 说明                                   |
+| ----------------------------------------- | -------------------------------------- |
+| [ARCHITECTURE.md](docs/ARCHITECTURE.md)   | 系统架构、混合检索、语义分块、双写存储 |
+| [SCRIPTS_GUIDE.md](docs/SCRIPTS_GUIDE.md) | 运维脚本功能详解                       |
+| [PROJECT_INTRO.md](docs/PROJECT_INTRO.md) | 项目介绍与宣传材料                     |
+| [DEPLOYMENT.md](docs/DEPLOYMENT.md)       | Docker 部署、数据备份                  |
+| [OPERATIONS.md](docs/OPERATIONS.md)       | 监控告警、故障排查                     |
+| [USER_MANUAL.md](docs/USER_MANUAL.md)     | API 使用、多轮对话                     |
+| [DEVELOPMENT.md](docs/DEVELOPMENT.md)     | 开发文档                               |
 
 ---
 
@@ -412,19 +411,19 @@ python scripts/verify/final_nutrition_report.py
 
 ### 核心环境变量
 
-| 变量 | 说明 | 默认值 |
-| ---- | ---- | ------ |
-| `APP_ENV` | 环境标识（dev/staging/prod） | development |
-| `JWT_SECRET_KEY` | JWT 签名密钥 | **必填** |
-| `DATABASE_URL` | PostgreSQL 连接串 | - |
-| `REDIS_HOST` / `REDIS_PORT` | Redis 地址 | localhost:6379 |
-| `LLM_API_KEY` / `LLM_BASE_URL` | LLM API 配置 | - |
-| `LLM_MODEL` | LLM 模型 | gpt-4o-mini |
-| `EMBEDDING_API_KEY` | Embedding API Key | - |
-| `CHROMA_HOST` / `CHROMA_PORT` | ChromaDB 地址 | localhost:8000 |
-| `RAG_TOP_K` | 检索 Top-K | 5 |
-| `RAG_MAX_REWRITE` | Query 最大改写次数 | 2 |
-| `RAG_CLARIFICATION_THRESHOLD` | 追问触发阈值 | 0.75 |
+| 变量                           | 说明                         | 默认值         |
+| ------------------------------ | ---------------------------- | -------------- |
+| `APP_ENV`                      | 环境标识（dev/staging/prod） | development    |
+| `JWT_SECRET_KEY`               | JWT 签名密钥                 | **必填**       |
+| `DATABASE_URL`                 | PostgreSQL 连接串            | -              |
+| `REDIS_HOST` / `REDIS_PORT`    | Redis 地址                   | localhost:6379 |
+| `LLM_API_KEY` / `LLM_BASE_URL` | LLM API 配置                 | -              |
+| `LLM_MODEL`                    | LLM 模型                     | gpt-4o-mini    |
+| `EMBEDDING_API_KEY`            | Embedding API Key            | -              |
+| `CHROMA_HOST` / `CHROMA_PORT`  | ChromaDB 地址                | localhost:8000 |
+| `RAG_TOP_K`                    | 检索 Top-K                   | 5              |
+| `RAG_MAX_REWRITE`              | Query 最大改写次数           | 2              |
+| `RAG_CLARIFICATION_THRESHOLD`  | 追问触发阈值                 | 0.75           |
 
 **完整配置** → [.env.example](.env.example)
 
@@ -433,6 +432,7 @@ python scripts/verify/final_nutrition_report.py
 ## 🗺️ 路线图
 
 ### V1.4 ✅（基础能力）
+
 - [x] LangGraph 状态机编排
 - [x] SQL + ChromaDB 混合检索
 - [x] RRF 融合算法
@@ -441,21 +441,24 @@ python scripts/verify/final_nutrition_report.py
 - [x] Docker Compose 部署
 
 ### V2.0 ✅（工程化）
-- [x] 模块化分层重构
-- [x] E2E 多轮对话测试
+
+- [x] 模块化分层重构（api/service/core/repositories/utils）
+- [x] 脚本体系：ingest/etl/verify/utils 四层分类
 - [x] OpenTelemetry 追踪
 - [x] 流式响应优化
 - [x] Prometheus + Grafana
 
 ### V3.0 ✅（智能升级）
+
 - [x] **语义分块**：SemanticChunker 替代固定分块
 - [x] **混合检索升级**：向量 + BM25 双路召回
 - [x] **双写存储**：ChromaDB + PostgreSQL document_chunks
 - [x] **指南注册表**：两阶段检索路由
 - [x] **GI 数据入库**：升糖指数双写支持
-- [x] **脚本体系**：ingest/etl/verify/utils 四层分类
+- [x] **E2E 测试更新**：适配语义分块 + 双写存储的新检索链路
 
 ### V4.0 📋（业务扩展）
+
 - [ ] 社交模块（关注/粉丝/动态）
 - [ ] 专家服务（认证/付费咨询）
 - [ ] UGC 内容管理

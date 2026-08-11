@@ -284,35 +284,58 @@ poetry.toml
 .ruff_cache/
 
 # LSP config files
-pyrightconfig.json
+yrightconfig.json
 
-# 资料数据
+# Raw data
 raw_data/
 
-# 忽略日志文件
+# Log files
 *.log
 
 .idea/
 
 # End of https://www.toptal.com/developers/gitignore/api/python,pycharm
 # ============================================================
-# HealthAI 项目专属忽略规则
+# HealthAI project-specific rules
 # ============================================================
 
-# 生成数据与本地存储
+# Generated data and local storage
 chroma_db/
 raw_data/
 
-# 临时文件
+# Temporary files
 openapi_temp.json
 ingest_expert_progress.json
 .test_deps/
 
-# 本地配置（含可能的环境差异）
+# Local config (may have environment-specific values)
 config.yaml
 
-# IDE 专属目录（Trae 文档等）
+# IDE directories
 .trae/
+.vscode/
 
-# Office 临时锁文件
+# Locust performance reports (generated at runtime)
+tests/perf/reports/
+
+# Office temp lock files
 ~$*
+
+# Project documentation (keep local, do not upload to GitHub)
+docs/
+
+# Root-level temporary scripts (removed or relocated)
+/check_kb.py
+/demo_streaming.py
+/main.py
+/__init__.py
+
+# Debug test scripts (underscore prefix, not real tests)
+tests/e2e/_*.py
+tests/integration/_*.py
+tests/integration/debug_search.py
+tests/integration/diagnose_rag.py
+tests/e2e/test_e2e_pipeline.py
+
+# Performance timing test (temporary verification script)
+tests/perf/test_food_timing.py
