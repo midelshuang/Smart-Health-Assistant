@@ -74,7 +74,7 @@ PLAN_KEYWORDS = [
     "增肌计划", "健康计划", "营养计划", "给我一份计划",
     "帮我规划", "帮我制定", "安排饮食", "规划饮食",
     "生成食谱", "制定食谱",
-    "饮食规划", "饮食方案", "食谱", "一日三餐", "每周食谱",
+    "饮食规划", "饮食方案", "一日三餐", "每周食谱",
     "帮我安排", "给我安排", "餐单", "菜单",
     "规划", "减肥规划", "减脂规划", "减重规划", "增肌规划",
     "食养规划", "养生规划", "减肥食谱", "减脂食谱",
@@ -90,7 +90,7 @@ GUIDELINE_KEYWORDS = [
     "孕期", "产后", "儿童", "老年人",
     "运动", "锻炼", "健身",
     "能不能", "可不可以", "适合", "禁忌",
-    "食谱", "方案",
+    "食谱", "方案", "做法", "烹饪", "步骤", "食养方",
 ]
 
 
@@ -745,6 +745,8 @@ SYSTEM_PROMPT_KB = (
     "3. 如果资料不足以完全回答问题，可以补充通用健康知识，但需标注「⚠️ 以下为AI通用知识，非知识库数据」\n"
     "4. 使用中文回答，语言简洁专业\n"
     "5. 对于食物营养查询，以表格形式展示更清晰\n"
+    "6. 如果参考资料中包含食谱、食养方或烹饪步骤相关内容，请将食材、用量、做法步骤清晰列出，并用加粗小标题分隔\n"
+    "7. 如果参考资料中包含食物交换表或替代食材建议，请一并推荐给用户\n"
 )
 
 # 系统提示词 - 知识库无结果时使用（LLM 生成）
@@ -763,7 +765,16 @@ GENERATE_PROMPT_KB = (
     "【参考资料 - 结构化数据】\n{sql_context}\n\n"
     "【参考资料 - 非结构化知识】\n{vector_context}\n\n"
     "请基于以上资料回答用户问题。"
-    "如果引用了参考资料中的内容，请在回答末尾附上来源。"
+    "如果引用了参考资料中的内容，请在回答末尾附上来源。\n\n"
+    "【回答要求】\n"
+    "- 如果用户询问食谱、饮食计划或做法相关内容，请从参考资料中提取食谱/食养方信息，"
+    "按以下结构输出：\n"
+    "  **食材清单**：列出所有食材及用量\n"
+    "  **烹饪步骤**：分步骤描述做法\n"
+    "  **营养估算**：如资料中有热量/营养信息请附上\n"
+    "  **来源引用**：标注引用的指南名称\n"
+    "- 如果参考资料中有多个食谱，请推荐最适合用户情况的 1-2 个\n"
+    "- 如果参考资料中没有具体食谱，但有饮食原则/建议，请基于这些原则给出具体的饮食方案\n"
 )
 
 # 生成提示词模板 - 知识库无结果
@@ -820,6 +831,10 @@ def generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "source_type": meta.get("source_type", "unknown"),
             "source_label": _source_type_label(meta.get("source_type", "unknown")),
             "score": str(r.get("score", 0)),
+            "chunk_id": r.get("id", ""),
+            "file_path": meta.get("file_path", ""),
+            "guideline_title": meta.get("guideline_title", ""),
+            "chunk_index": meta.get("chunk_index", -1),
         })
     for r in sql_results:
         sources.append({
@@ -827,6 +842,10 @@ def generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "source_type": "nutrition_fact",
             "source_label": "营养成分表",
             "score": "1.0",
+            "chunk_id": "",
+            "file_path": "",
+            "guideline_title": "",
+            "chunk_index": -1,
         })
 
     # 根据知识库结果选择不同的提示词
@@ -1021,13 +1040,18 @@ def _format_vector_context(vector_results: List[Dict]) -> str:
     if not vector_results:
         return "（无匹配的指南文献内容）"
 
+    recipe_kw = ["食谱", "食养方", "做法", "烹饪", "步骤", "食材"]
+
     lines = ["以下是从权威指南中检索到的相关内容片段："]
     for i, item in enumerate(vector_results[:5], 1):
         meta = item.get("metadata", {})
         source = meta.get("file_name", "未知来源")
         content = item.get("content", "")
-        if len(content) > 300:
-            content = content[:300] + "..."
+        # 食谱/食养方内容保留更多篇幅（300→500），避免截断关键步骤
+        is_recipe = any(kw in content for kw in recipe_kw) or any(kw in source for kw in recipe_kw)
+        max_len = 500 if is_recipe else 300
+        if len(content) > max_len:
+            content = content[:max_len] + "..."
         lines.append(f"{i}. 【来源: {source}】{content}")
     return "\n\n".join(lines)
 
@@ -1527,13 +1551,23 @@ def _format_plan_for_chat(plan_config: Dict[str, Any], plan_id: int, goal_type: 
             time = meal.get("time", "")
             parts.append(f"\n  [{meal_type}] {time}")
             for item in meal.get("items", []):
-                parts.append(
-                    f"    • {item.get('food', '?')} "
-                    f"{item.get('quantity', '')} "
-                    f"({item.get('calories', '?')} kcal)"
-                )
+                food_line = f"    • {item.get('food', '?')} {item.get('quantity', '')} ({item.get('calories', '?')} kcal)"
+                cooking = item.get("cooking_method", "")
+                if cooking:
+                    food_line += f"  👨‍🍳 {cooking}"
+                parts.append(food_line)
             if meal.get("total_calories"):
                 parts.append(f"    小计: {meal['total_calories']} kcal")
+            # 烹饪步骤
+            recipe_steps = meal.get("recipe_steps", [])
+            if recipe_steps and isinstance(recipe_steps, list):
+                parts.append("    📝 做法步骤:")
+                for step in recipe_steps:
+                    parts.append(f"      {step}")
+
+    source_guidelines = plan_config.get("source_guidelines", [])
+    if source_guidelines and isinstance(source_guidelines, list):
+        parts.append("\n📖 参考指南: " + "、".join(source_guidelines))
 
     advice = plan_config.get("advice", "")
     if advice:

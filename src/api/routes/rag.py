@@ -240,3 +240,93 @@ def get_rag_status():
     except Exception as e:
         logger.error(f"获取 RAG 状态异常: {e}")
         raise HTTPException(status_code=500, detail=f"获取状态异常: {e}")
+
+
+# ============================================================
+# 文档溯源：根据 chunk_id 获取原文档片段
+# ============================================================
+
+class ChunkDetailResponse(BaseModel):
+    """文档片段详情响应体"""
+    chunk_id: str = Field(..., description="分块唯一ID")
+    content: str = Field(..., description="分块全文内容")
+    file_name: str = Field(default="", description="原始文件名")
+    file_path: str = Field(default="", description="原始文件路径")
+    source_type: str = Field(default="", description="来源类型")
+    guideline_title: str = Field(default="", description="指南标题")
+    chunk_index: int = Field(default=-1, description="在原文件中的分块序号")
+    char_count: int = Field(default=0, description="字符数")
+    metadata: Dict[str, Any] = Field(default_factory=dict, description="完整元数据")
+
+
+@router.get("/chunk/{chunk_id}", response_model=ChunkDetailResponse)
+def get_chunk_detail(chunk_id: str):
+    """
+    根据 chunk_id 获取原文档片段详情
+
+    用于文档溯源：用户点击引用来源时，调用此接口查看完整的原文档片段。
+    同时查询 ChromaDB 和 PostgreSQL，优先返回内容更完整的来源。
+    """
+    # 1. 先查 PostgreSQL（content 字段不截断）
+    try:
+        from src.repositories.session import SessionLocal
+        from src.models.db_models import DocumentChunk
+
+        db = SessionLocal()
+        try:
+            chunk = db.query(DocumentChunk).filter(
+                DocumentChunk.chunk_id == chunk_id
+            ).first()
+
+            if chunk:
+                return ChunkDetailResponse(
+                    chunk_id=chunk.chunk_id,
+                    content=chunk.content,
+                    file_name=chunk.file_name or "",
+                    file_path=chunk.file_path or "",
+                    source_type=chunk.source_type or "",
+                    guideline_title=chunk.guideline_title or "",
+                    chunk_index=chunk.chunk_index if chunk.chunk_index is not None else -1,
+                    char_count=chunk.char_count if chunk.char_count is not None else len(chunk.content),
+                    metadata={
+                        "audience": chunk.audience or "",
+                        "disease_tags": chunk.disease_tags or "",
+                        "region": chunk.region or "",
+                        "age_group": chunk.age_group or "",
+                        "doc_type": chunk.doc_type or "",
+                    } if chunk.source_type == "guideline" else {},
+                )
+        finally:
+            db.close()
+    except Exception as e:
+        logger.warning(f"PostgreSQL 查询 chunk 失败: {e}")
+
+    # 2. 回退到 ChromaDB
+    try:
+        from src.repositories.vector_store import VectorStore
+        from src.core.embedding import get_embedding_function
+
+        vs = VectorStore()
+        vs.connect()
+        embedding_fn = get_embedding_function()
+        collection = vs.get_or_create_collection(embedding_function=embedding_fn)
+
+        result = collection.get(ids=[chunk_id], include=["documents", "metadatas"])
+        if result and result["ids"]:
+            content = result["documents"][0] or ""
+            meta = result["metadatas"][0] or {}
+            return ChunkDetailResponse(
+                chunk_id=chunk_id,
+                content=content,
+                file_name=meta.get("file_name", ""),
+                file_path=meta.get("file_path", ""),
+                source_type=meta.get("source_type", ""),
+                guideline_title=meta.get("guideline_title", ""),
+                chunk_index=meta.get("chunk_index", -1),
+                char_count=len(content),
+                metadata=meta,
+            )
+    except Exception as e:
+        logger.error(f"ChromaDB 查询 chunk 失败: {e}")
+
+    raise HTTPException(status_code=404, detail=f"未找到 chunk_id={chunk_id} 的文档片段")

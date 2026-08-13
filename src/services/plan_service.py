@@ -107,6 +107,8 @@ PLAN_SYSTEM_PROMPT = (
     "6. 必须规避用户的过敏食物\n"
     "7. 如用户有特定疾病（糖尿病/高血压等），需标注相关注意事项\n"
     "8. 如果指南参考内容为空或不足，请基于专业营养学知识生成计划，但需在advice中标注「基于通用营养学知识」\n"
+    "9. 每一餐的每个食物都应附带简单的烹饪说明（如「清蒸鲈鱼」→「清蒸8分钟」）\n"
+    "10. 优先使用指南中附录的食谱示例和食养方，并根据用户情况做适当调整\n"
 )
 
 # 生成计划用的用户提示词模板
@@ -125,14 +127,16 @@ PLAN_USER_PROMPT = (
     '      "meal_type": "breakfast",\n'
     '      "time": "07:00-08:00",\n'
     '      "items": [\n'
-    '        {{"food": "全麦面包", "quantity": "2片(约60g)", "calories": 200}},\n'
-    '        {{"food": "鸡蛋", "quantity": "1个(约50g)", "calories": 80}}\n'
+    '        {{"food": "全麦面包", "quantity": "2片(约60g)", "calories": 200, "cooking_method": "直接食用" }},\n'
+    '        {{"food": "鸡蛋", "quantity": "1个(约50g)", "calories": 80, "cooking_method": "水煮6分钟" }}\n'
     '      ],\n'
-    '      "total_calories": 450\n'
+    '      "total_calories": 450,\n'
+    '      "recipe_steps": ["1. 鸡蛋冷水下锅，水开后煮6分钟", "2. 全麦面包烤至微黄即可"]\n'
     '    }}\n'
     '  ],\n'
     '  "advice": "总体饮食建议（引用指南中的具体建议）",\n'
-    '  "precautions": "注意事项（含过敏/疾病相关）"\n'
+    '  "precautions": "注意事项（含过敏/疾病相关）",\n'
+    '  "source_guidelines": ["引用的指南名称列表"]\n'
     "}}\n"
 )
 
@@ -197,15 +201,16 @@ def _build_plan_query(profile: Dict[str, Any]) -> str:
     # 2. 地区路由
     if region:
         parts.append(f"{region}地区饮食")
+        parts.append(f"{region}食谱")
 
-    # 3. 健康目标/标签
+    # 3. 健康目标/标签 → 附加食谱关键词
     if health_goal:
         goal_map = {
-            "weight_loss": "肥胖减重饮食",
-            "muscle_gain": "增肌营养饮食",
-            "health_maintenance": "健康饮食维持",
-            "blood_sugar_control": "糖尿病饮食",
-            "blood_pressure_control": "高血压饮食",
+            "weight_loss": "肥胖减重饮食 减脂食谱 食养方",
+            "muscle_gain": "增肌营养饮食 高蛋白食谱",
+            "health_maintenance": "健康饮食维持 平衡膳食",
+            "blood_sugar_control": "糖尿病饮食 糖尿病食谱 低糖食谱",
+            "blood_pressure_control": "高血压饮食 高血压食谱 低盐食谱",
         }
         mapped = goal_map.get(health_goal, health_goal)
         parts.append(mapped)
@@ -213,16 +218,19 @@ def _build_plan_query(profile: Dict[str, Any]) -> str:
     if health_tags:
         for tag in health_tags:
             if tag in ("糖尿病", "高血压", "高血脂", "肥胖", "超重"):
-                parts.append(f"{tag}饮食指南")
+                parts.append(f"{tag}饮食指南 {tag}食谱")
 
     # 4. BMI 补充
     if bmi is not None:
         if bmi >= 28:
-            parts.append("重度肥胖饮食")
+            parts.append("重度肥胖饮食 减肥食谱")
         elif bmi >= 24:
-            parts.append("超重肥胖饮食")
+            parts.append("超重肥胖饮食 减脂食谱")
         elif bmi < 18.5:
-            parts.append("低体重增重饮食")
+            parts.append("低体重增重饮食 增肌食谱")
+
+    # 5. 食谱/食养方/做法关键词（专项召回）
+    parts.append("食谱 食养方 做法 烹饪步骤 食材")
 
     if not parts:
         parts.append("健康饮食指南")
