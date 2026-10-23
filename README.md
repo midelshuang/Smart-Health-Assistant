@@ -10,27 +10,145 @@
 [![Tests](https://img.shields.io/badge/tests-422%20passed-4CAF50.svg)](#测试)
 [![Version](https://img.shields.io/badge/version-3.0.0-FF8C00.svg)](#版本历史)
 
-> 基于 **LangGraph 状态机** 与 **RAG（检索增强生成）** 的智能健康饮食助手，
-> 融合 **向量语义检索 + BM25 关键词检索** 混合召回，采用 **语义分块** 确保查询精度，
-> 为用户提供可溯源、安全护栏加持的个性化健康建议。
+## 这是什么？
+
+**HealthAI 是一个基于权威指南的 AI 饮食健康助手。**
+
+它面向需要管理饮食的普通人——减肥减脂、三高、痛风、肾病等人群，也适合营养师等健康从业者作为辅助工具。
+
+它解决的问题很简单：**网上饮食建议鱼龙混杂，AI 生成的答案又常常是编的。** HealthAI 的每个回答都检索自国家卫健委发布的权威食养指南和标准食物成分数据，并附上来源引用——你可以点开溯源，自己验证。
+
+```text
+你问："痛风缓解期能吃豆腐吗？"
+它答：基于《成人高尿酸血症与痛风食养指南》给出建议，
+      并标注来源章节——不是 AI 拍脑袋，是有出处的。
+
+你说："帮我减脂，26 岁，身高 158，体重 65kg"
+它做：生成 7 天 / 30 天个性化食谱，按你的身高体重疾病定制，
+      每天食材不重样，附换菜方案和营养说明。
+```
 
 ---
 
-## ✨ 核心特性
+## ✨ 它能做什么？
+
+| 功能 | 说明 |
+| ---- | ---- |
+| 💬 **智能饮食问答** | 问"痛风能吃豆腐吗""减肥能吃多少米饭"，回答基于权威指南并**附来源引用**，可点击溯源到原文档 |
+| 🍱 **个性化食谱生成** | 输入身高体重目标和健康状况，生成 **7 天 / 30 天**食谱计划：每天三餐+加餐不重样，附营养分析和替换方案 |
+| 🍚 **食物数据查询** | 259 条 GI 升糖指数、中国食物成分表、常见食物嘌呤含量，支持自然语言查询（"西瓜 GI 高吗"） |
+| 🤔 **多轮主动追问** | 信息不够时它会**主动问你**（"您的身高体重是多少？"），而不是瞎猜着生成——像真人营养师一样澄清需求 |
+| 🛡️ **安全护栏** | 自动拦截处方药、诊断、极端饮食等越界请求；5+2 轻断食这类**科学减脂咨询正常放行** |
+| ✅ **打卡跟踪** | 按计划每日打卡，跟踪执行情况 |
+| 🎬 **多模态知识库** | 不止 PDF 指南，还入库了专家视频（含字幕转写）、GI 数据表，回答可引用视频来源 |
+
+---
+
+## 💬 示例对话
+
+```text
+👤 26岁男生，想减肥，帮我制定个饮食计划
+
+🤖  为了给你定制食谱，还需要确认几个信息：
+    你的身高和体重大概是多少？平时有体检指标异常吗？
+
+👤  158cm，65kg，尿酸偏高
+
+🤖  已为你匹配《成人高尿酸血症与痛风食养指南》+《成人肥胖食养指南》。
+    生成了 7 天食谱（表格如下），每天不重样：
+    - 周一：燕麦粥 + 清蒸鲈鱼 + 蒜蓉油麦菜 …
+    - 周二：全麦面包 + 虾仁冬瓜汤 + 凉拌菠菜 …
+    每道菜都可在「换菜池」中替换同类食材。
+    📚 来源：成人高尿酸血症与痛风食养指南、中国居民膳食指南（2022）
+
+👤  那我能喝豆浆吗？
+
+🤖  缓解期可以适量饮用。根据指南，大豆制品属于低嘌呤食物…
+    📚 来源：成人高尿酸血症与痛风食养指南（第X节）
+    [点击可查看原文档对应段落]
+```
+
+---
+
+## 🎯 核心技术亮点
 
 - 🧠 **LangGraph 状态机编排**：意图识别 → Query 改写 → 混合检索 → 评估 → 追问/生成，复杂多轮对话流转
-- 🔍 **混合检索架构（V3.0 升级）**：向量语义检索 + PostgreSQL BM25 关键词检索双路召回，RRF 融合优化排序
-- 📐 **语义分块（V3.0 新增）**：SemanticChunker 基于段落/章节/句子边界智能切分，重叠窗口保持上下文连贯
-- 💾 **双写存储（V3.0 新增）**：ChromaDB（向量）+ PostgreSQL document_chunks（全文），支持多模态检索
-- 📋 **指南注册表（V3.0 新增）**：GuidelineRegistry 按年龄/疾病/BMI 两阶段路由匹配，精准定位目标指南
-- 🍚 **GI 升糖指数数据（V3.0 新增）**：259 条 GI 数据入库，支持低/中/高 GI 食物检索
-- 🛡️ **双重安全护栏**：正则规则（快速拦截）+ LLM 语义判断（深层识别），拦截处方药/诊断请求等违规咨询
-- 🔍 **ClarificationNode 追问节点**：检索质量差时自动追问用户补充信息，而非强行猜测
-- 🍎 **食物安全校验**：独立 `food_validator` 模块，覆盖过敏原/疾病禁忌/药物交互/营养素边界
-- 🔧 **合规规则热更新**：安全规则外置 YAML 配置，基于 mtime 检测自动热加载，无需重启
-- 📊 **企业级可观测性**：Prometheus 指标采集 + Grafana 仪表盘 + 结构化日志 + OpenTelemetry 追踪
-- 📚 **数据溯源**：大模型回复自动附带引用来源，拒绝 AI 幻觉
-- 🐳 **一键 Docker 部署**：PostgreSQL + ChromaDB + Redis + FastAPI + Streamlit + Prometheus + Grafana
+- 🔍 **混合检索架构（V3.0）**：向量语义检索 + PostgreSQL BM25 关键词检索双路召回，RRF 融合优化排序
+- 📐 **语义分块（V3.0）**：SemanticChunker 基于段落/章节/句子边界智能切分，重叠窗口保持上下文连贯
+- 💾 **双写存储（V3.0）**：ChromaDB（向量）+ PostgreSQL document_chunks（全文），支持多模态检索
+- 📋 **指南注册表（V3.0）**：GuidelineRegistry 按年龄/疾病/BMI 两阶段路由匹配，精准定位目标指南
+- 🛡️ **双重安全护栏**：正则规则（<5ms 快速拦截）+ LLM 语义判断（深层识别），规则外置 YAML 热更新
+- 📊 **企业级可观测性**：Prometheus 指标 + Grafana 仪表盘 + 结构化日志 + OpenTelemetry 追踪
+- ⚙️ **持续集成**：GitHub Actions 自动跑 lint / 依赖漏洞扫描 / 全量测试（覆盖率门槛 40%）
+
+---
+
+## 🚀 快速开始
+
+### 环境要求
+
+- Python 3.11+
+- PostgreSQL 15+
+- Redis 7+
+- Docker 24+（可选，推荐用于生产）
+
+### 方式一：Docker 一键部署（推荐）
+
+```bash
+# 1. 克隆项目
+git clone https://github.com/midelshuang/Smart-Health-Assistant.git
+cd HealthAI-Platform
+
+# 2. 配置环境变量
+cp .env.example .env
+# 编辑 .env，填入：
+#   - POSTGRES_PASSWORD（生产环境务必修改）
+#   - JWT_SECRET_KEY（32+ 字符随机字符串）
+#   - LLM_API_KEY / EMBEDDING_API_KEY
+
+# 3. 一键启动所有服务
+docker compose --env-file .env up -d
+
+# 4. 验证健康检查
+curl http://localhost:8000/api/health
+# 预期: {"status":"healthy","database":"connected","redis":"connected"}
+```
+
+### 方式二：本地开发
+
+```bash
+# 1. 克隆并创建虚拟环境
+git clone https://github.com/midelshuang/Smart-Health-Assistant.git
+cd HealthAI-Platform
+python -m venv venv
+venv\Scripts\activate        # Windows
+# source venv/bin/activate   # macOS/Linux
+
+# 2. 安装依赖
+pip install -r requirements.txt
+
+# 3. 配置环境变量
+cp .env.example .env
+# 编辑 .env，修改数据库/LLM 连接信息
+
+# 4. 启动依赖服务
+docker compose up -d db redis chroma
+
+# 5. 初始化数据库
+psql -U postgres -d healthai_db -f database/init.sql
+
+# 6. 入库数据（首次运行，导入指南/食物数据/GI 数据）
+python scripts/ingest/unified_reindex.py --target all
+
+# 7. 启动应用
+python run.py all            # 一键启动 API(8000) + 前端(8501)
+# 或仅启动后端：python web_api.py
+```
+
+启动后：
+
+- **Web 界面**：http://localhost:8000 （对话问答、食谱表格、来源溯源）
+- **API 文档**：http://localhost:8000/docs （Swagger 自动生成）
 
 ---
 
@@ -59,7 +177,7 @@
           │   外部 LLM / Embedding API  │     │   数据存储层     │
           └────────────────────────────┘     │ ┌──────────────┐ │
                                              │ │ PostgreSQL   │ │
-                                             │ │ └──────────────┘ │
+                                             │ └──────────────┘ │
                                              │ ┌──────────────┐ │
                                              │ │  ChromaDB   │ │
                                              │ └──────────────┘ │
@@ -69,7 +187,81 @@
                                              └──────────────────┘
 ```
 
+**一次提问的完整旅程**：用户提问 → 安全护栏校验 → 意图识别 → Query 改写 → 三路并行检索（向量/关键词/SQL）→ RRF 融合排序 → 质量评估（不达标则改写重检索或追问澄清）→ LLM 生成带引用的回答。
+
 **详细架构设计** → [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)
+
+---
+
+## 🧠 RAG 状态机流程
+
+```
+START
+  │
+  ▼
+[ safety_check ] ──(拦截)──▶ END（拒绝话术）
+  │(通过)
+  ▼
+[ intent_recognizer ]
+  │
+  ▼
+[ query_rewriter ]
+  │
+  ├──(food_search)──▶ [sql_retriever] ──┐
+  │                                     │
+  ├──(guideline_query)──▶ [vector_retriever] + [keyword_search] ──┤
+  │                                     │
+  └──(hybrid/unknown)──▶ 三路并行 ───────┘
+                                        │
+                                        ▼
+                                  [ RRF 融合 ]
+                                        │
+                                        ▼
+                                  [ evaluator ]
+                                        │
+                          ┌──────────────┼──────────────┐
+                          ▼              ▼              ▼
+                      (通过)       (可改写)       (达上限)
+                          │              │              │
+                          ▼              ▼              ▼
+                     [fusion]    [query_rewriter]  [clarification]
+                          │                              │
+                          ▼                              ▼
+                     [generator]                   (追问)→ END
+                          │
+                          ▼
+                         END
+```
+
+**详细节点说明** → [src/core/nodes/**init**.py](src/core/nodes/__init__.py)
+
+---
+
+## 🛡️ 安全护栏
+
+系统采用**双重校验**机制拦截违规医疗咨询：
+
+| 校验层 | 方式         | 延迟  | 用途                 |
+| ------ | ------------ | ----- | -------------------- |
+| 第一层 | 正则规则匹配 | < 5ms | 快速拦截明确违规内容 |
+| 第二层 | LLM 语义判断 | < 1s  | 识别隐晦违规请求     |
+
+**设计原则**：拦截的是"医疗越界"（开药、诊断、治疗方案），放行的是"健康生活咨询"（减脂计划、科学轻断食、饮食科普）。
+
+**可拦截类别**：
+
+- `prescription_drug` — 处方药请求
+- `diagnosis_request` — 诊断请求
+- `extreme_diet` — 极端饮食（连续多日绝食、催吐等）
+- `treatment_plan` — 治疗方案请求
+- `special_population_intervention` — 特殊人群干预
+
+**规则热更新**：
+
+```bash
+# 编辑 config/safety_rules.yaml 后自动生效（5 秒内），无需重启
+curl -X POST http://localhost:8000/api/v1/admin/safety-rules/reload
+```
 
 ---
 
@@ -136,20 +328,9 @@ HealthAI-Platform/
 │   └── modules/                  # V4 预留模块
 ├── scripts/                      # 运维脚本（按职责分类）
 │   ├── ingest/                   # 入库脚本
-│   │   ├── unified_reindex.py    # 统一入库（指南/食品/GI/专家）
-│   │   ├── import_gi.py          # GI 升糖指数 ETL
-│   │   ├── import_nutrition.py   # 营养成分 ETL
-│   │   └── seed_knowledge_base.py # 种子数据导入
 │   ├── etl/                      # 数据清洗脚本
-│   │   ├── clean_nutrition_data.py # 营养数据清洗（步骤1）
-│   │   ├── fix_abnormal_data.py  # 异常数据修正（步骤2）
-│   │   └── fill_missing_calories.py # 缺失热量补充（步骤3）
 │   ├── verify/                   # 验证脚本
-│   │   ├── verify_ingestion.py   # 入库一致性验证
-│   │   ├── check_kb_guides.py    # 指南检查
-│   │   └── final_nutrition_report.py # 数据质量报告
 │   └── utils/                    # 工具脚本
-│       └── clear_cache.py        # Redis 缓存清理
 ├── tests/                        # 测试（分层组织）
 │   ├── unit/                     # 单元测试
 │   ├── integration/              # 集成测试
@@ -160,76 +341,13 @@ HealthAI-Platform/
 │   └── china-food-composition-data/ # 中国食物成分数据
 ├── config/                       # 外部配置
 │   └── safety_rules.yaml         # 安全护栏规则
-├── database/                     # 数据库脚本
+├── .github/workflows/ci.yml      # GitHub Actions 持续集成
 ├── docs/                         # 文档
 ├── grafana/                      # Grafana 配置
 ├── docker-compose.yml            # Docker Compose
 ├── Dockerfile                    # 应用镜像
 ├── requirements.txt              # Python 依赖
 └── README.md
-```
-
----
-
-## 🚀 快速开始
-
-### 环境要求
-
-- Python 3.11+
-- PostgreSQL 15+
-- Redis 7+
-- Docker 24+（可选，推荐用于生产）
-
-### 方式一：Docker 一键部署（推荐）
-
-```bash
-# 1. 克隆项目
-git clone https://github.com/midelshuang/Smart-Health-Assistant.git
-cd HealthAI-Platform
-
-# 2. 配置环境变量
-cp .env.example .env
-# 编辑 .env，填入：
-#   - POSTGRES_PASSWORD（生产环境务必修改）
-#   - JWT_SECRET_KEY（32+ 字符随机字符串）
-#   - LLM_API_KEY / EMBEDDING_API_KEY
-
-# 3. 一键启动所有服务
-docker compose --env-file .env up -d
-
-# 4. 验证健康检查
-curl http://localhost:8000/api/health
-# 预期: {"status":"healthy","database":"connected","redis":"connected"}
-```
-
-### 方式二：本地开发
-
-```bash
-# 1. 克隆并创建虚拟环境
-git clone https://github.com/midelshuang/Smart-Health-Assistant.git
-cd HealthAI-Platform
-python -m venv venv
-venv\Scripts\activate        # Windows
-# source venv/bin/activate   # macOS/Linux
-
-# 2. 安装依赖
-pip install -r requirements.txt
-
-# 3. 配置环境变量
-cp .env.example .env
-# 编辑 .env，修改数据库/LLM 连接信息
-
-# 4. 启动依赖服务
-docker compose up -d db redis chroma
-
-# 5. 初始化数据库
-psql -U postgres -d healthai_db -f database/init.sql
-
-# 6. 入库数据（首次运行）
-python scripts/ingest/unified_reindex.py --target all
-
-# 7. 启动应用
-uvicorn src.main:app --host 0.0.0.0 --port 8000 --reload
 ```
 
 ---
@@ -293,76 +411,6 @@ GET  /api/metrics              # Prometheus 指标
 
 ---
 
-## 🧠 RAG 状态机流程
-
-```
-START
-  │
-  ▼
-[ safety_check ] ──(拦截)──▶ END（拒绝话术）
-  │(通过)
-  ▼
-[ intent_recognizer ]
-  │
-  ▼
-[ query_rewriter ]
-  │
-  ├──(food_search)──▶ [sql_retriever] ──┐
-  │                                     │
-  ├──(guideline_query)──▶ [vector_retriever] + [keyword_search] ──┤
-  │                                     │
-  └──(hybrid/unknown)──▶ 三路并行 ───────┘
-                                        │
-                                        ▼
-                                  [ RRF 融合 ]
-                                        │
-                                        ▼
-                                  [ evaluator ]
-                                        │
-                          ┌──────────────┼──────────────┐
-                          ▼              ▼              ▼
-                      (通过)       (可改写)       (达上限)
-                          │              │              │
-                          ▼              ▼              ▼
-                     [fusion]    [query_rewriter]  [clarification]
-                          │                              │
-                          ▼                              ▼
-                     [generator]                   (追问)→ END
-                          │
-                          ▼
-                         END
-```
-
-**详细节点说明** → [src/core/nodes/**init**.py](src/core/nodes/__init__.py)
-
----
-
-## 🛡️ 安全护栏
-
-系统采用**双重校验**机制拦截违规医疗咨询：
-
-| 校验层 | 方式         | 延迟  | 用途                 |
-| ------ | ------------ | ----- | -------------------- |
-| 第一层 | 正则规则匹配 | < 5ms | 快速拦截明确违规内容 |
-| 第二层 | LLM 语义判断 | < 1s  | 识别隐晦违规请求     |
-
-**可拦截类别**：
-
-- `prescription_drug` — 处方药请求
-- `diagnosis_request` — 诊断请求
-- `extreme_diet` — 极端饮食
-- `treatment_plan` — 治疗方案请求
-- `special_population_intervention` — 特殊人群干预
-
-**规则热更新**：
-
-```bash
-# 编辑 config/safety_rules.yaml 后自动生效（5 秒内）
-curl -X POST http://localhost:8000/api/v1/admin/safety-rules/reload
-```
-
----
-
 ## 🧪 测试
 
 ### 运行全部测试
@@ -377,6 +425,10 @@ pytest tests/integration/ -v    # 集成测试（需 Redis/DB）
 pytest tests/e2e/ -v            # 端到端测试
 pytest tests/perf/ -v           # 性能测试
 ```
+
+### 持续集成
+
+项目配置了 GitHub Actions（[.github/workflows/ci.yml](.github/workflows/ci.yml)）：每次 push / PR 自动在干净的 Ubuntu 环境中运行 ruff 风格检查、pip-audit 依赖漏洞扫描、pytest 全量测试（PostgreSQL/Redis 由服务容器提供），覆盖率低于 40% 判失败。
 
 ### 数据验证
 
