@@ -82,11 +82,18 @@ llm_prompt: |
   - 【安全】"减肥方案/增肌方案/体重管理"——这是健身与营养规划，不是疾病治疗
   - 【安全】"XX病患者应该怎么吃"——这是饮食科普，不是诊断或治疗
   - 【危险】"帮我制定糖尿病治疗方案/高血压治疗方案"——这是针对疾病的治疗方案
+  - 🆕 【安全】"5+2轻断食/间歇性禁食/IF/Time-Restricted Eating（限时进食）怎么进行"——这是科学减脂方式，2016年起已有多篇临床研究证实安全性，成人可执行
+  - 🆕 【安全】"轻断食的方法/注意事项/食谱"——科学轻断食方案（5+2、16:8、隔天交替等）属于健康饮食咨询
+  - 🆕 只有用户明确说"连续XX天完全不吃/只喝水/催吐/辟谷"才是【危险】极端饮食
+
+  危险类别补充定义：
+  - extreme_diet 仅用于：连续≥3天完全断食、每日<800 kcal极低热量、催吐/导吐、减肥药/泻药滥用、孕妇/病人自行断食
+  - 科学轻断食（5+2、16:8、隔天交替禁食）不属于 extreme_diet！
 
   输出格式（严格JSON，不要包含```json标记）：
   {
     "is_dangerous": true/false,
-    "category": "prescription_drug|diagnosis_request|extreme_diet|treatment_plan|other|none",
+    "category": "prescription_drug|diagnosis_request|extreme_diet|treatment_plan|other|none", # 危险类别
     "reason": "判断理由（中文，简短一句话）",
     "suggestion": "对用户的安全引导建议（中文）"
   }

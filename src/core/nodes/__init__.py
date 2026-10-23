@@ -79,6 +79,13 @@ PLAN_KEYWORDS = [
     "规划", "减肥规划", "减脂规划", "减重规划", "增肌规划",
     "食养规划", "养生规划", "减肥食谱", "减脂食谱",
     "给我食谱", "推荐食谱", "饮食安排", "膳食计划",
+    # === 自然语言方法请求类（无"计划"字样但意图强烈） ===
+    "如何减肥", "怎么减肥", "减肥怎么办", "想减肥", "要减肥", "我要减肥",
+    "如何减脂", "怎么减脂", "想减脂", "我想减脂",
+    "如何增肌", "怎么增肌", "想增肌", "我想增肌",
+    "如何减重", "怎么减重", "想减重", "我想减重",
+    "如何瘦", "怎么瘦", "想瘦", "我想瘦",
+    "如何吃", "怎么吃", "吃什么", "吃什么好",
 ]
 
 # 指南关键词（命中则走向量检索路径）
@@ -153,6 +160,15 @@ def intent_recognizer_node(state: Dict[str, Any]) -> Dict[str, Any]:
         logger.info("安全护栏已拦截，跳过意图识别")
         return {"intent": "blocked"}
 
+    # 🆕 前端显式覆盖：state 已有 plan_duration + intent=plan_generation → 直接跳过关键词识别
+    if state.get("intent") == "plan_generation" and state.get("plan_duration"):
+        logger.info(f"前端已显式指定 plan_duration={state['plan_duration']}，跳过意图识别关键词判断")
+        return {
+            "intent": "plan_generation",
+            "plan_duration": state["plan_duration"],
+            "goal_type": state.get("goal_type", "weight_loss"),
+        }
+
     original_query = state.get("original_query", "").lower()
     conversation_context = state.get("conversation_context", []) or []
 
@@ -161,8 +177,17 @@ def intent_recognizer_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
     # === 追问上下文检测：如果上一轮 AI 在追问，用户当前输入视为补充信息 ===
     if _is_reply_to_clarification(conversation_context):
-        logger.info(f"追问上下文检测：上一轮 AI 在追问，当前输入'{original_query}'视为补充信息 → plan_generation")
-        return {"intent": "plan_generation", "goal_type": state.get("goal_type", "")}
+        # 从当前查询文本识别是否带时长升级意图（用户可能点了按钮发送的追问）
+        clarified_duration = state.get("plan_duration") or "1_day"
+        if any(kw in original_query for kw in ["一个月", "30天", "三十天", "月度", "月计划", "四周", "4周"]):
+            clarified_duration = "30_days"
+        elif any(kw in original_query for kw in ["7天", "七天", "一周", "一星期", "周计划", "完整7天", "7日", "升级7天", "七天完整"]):
+            clarified_duration = "7_days"
+        logger.info(
+            f"追问上下文检测：上一轮 AI 在追问，当前输入视为补充信息 → plan_generation "
+            f"(goal_type={state.get('goal_type','')}, plan_duration={clarified_duration})"
+        )
+        return {"intent": "plan_generation", "goal_type": state.get("goal_type", ""), "plan_duration": clarified_duration}
 
     plan_hits = sum(1 for kw in PLAN_KEYWORDS if kw in original_query)
 
@@ -189,8 +214,23 @@ def intent_recognizer_node(state: Dict[str, Any]) -> Dict[str, Any]:
             goal_type = "blood_pressure_control"
         elif any(k in original_query for k in ["养生"]):
             goal_type = "health_maintenance"
-        logger.info(f"意图识别完成: intent=plan_generation (goal_type={goal_type}, plan_hits={plan_hits}, personal={personal_indicators})")
-        return {"intent": "plan_generation", "goal_type": goal_type}
+
+        # ====== 时长识别（1天/7天/30天） ======
+        # 显式要求 30 天 → 月度框架
+        if any(kw in original_query for kw in ["一个月", "30天", "三十天", "月度", "月计划", "四周", "4周"]):
+            plan_duration = "30_days"
+        # 显式要求 7 天 → 完整周计划
+        elif any(kw in original_query for kw in ["7天", "七天", "一周", "一星期", "周计划", "完整7天", "7日"]):
+            plan_duration = "7_days"
+        # 其他情况 → 默认 1 天示范（防超时，用户满意后可点按钮升级）
+        else:
+            plan_duration = "1_day"
+
+        logger.info(
+            f"意图识别完成: intent=plan_generation (goal_type={goal_type}, "
+            f"plan_duration={plan_duration}, plan_hits={plan_hits}, personal={personal_indicators})"
+        )
+        return {"intent": "plan_generation", "goal_type": goal_type, "plan_duration": plan_duration}
 
     food_hits = sum(1 for kw in FOOD_KEYWORDS if kw in original_query)
     guideline_hits = sum(1 for kw in GUIDELINE_KEYWORDS if kw in original_query)
@@ -826,10 +866,13 @@ def generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     sources = []
     for r in vector_results:
         meta = r.get("metadata", {})
+        raw_name = meta.get("file_name", "未知来源")
+        st = meta.get("source_type", "unknown")
         sources.append({
-            "file_name": meta.get("file_name", "未知来源"),
-            "source_type": meta.get("source_type", "unknown"),
-            "source_label": _source_type_label(meta.get("source_type", "unknown")),
+            "file_name": _beautify_source_name(raw_name, st),
+            "raw_file_name": raw_name,
+            "source_type": st,
+            "source_label": _source_type_label(st),
             "score": str(r.get("score", 0)),
             "chunk_id": r.get("id", ""),
             "file_path": meta.get("file_path", ""),
@@ -1014,10 +1057,64 @@ def _source_type_label(source_type: str) -> str:
         "expert_experience": "专家经验",
         "nutrition_fact": "营养成分表",
         "gi_data": "GI数据",
+        "expert_media": "专家媒体",
         "llm_generated": "AI生成（非知识库）",
         "unknown": "未知来源",
     }
     return mapping.get(source_type, source_type)
+
+
+def _beautify_source_name(file_name: Any, source_type: str = "") -> str:
+    """
+    美化来源文件名，将不友好的文件名（如"抖音202683-138511.mp4"）转为专业描述。
+    对于视频/音频文件，根据文件名特征生成内容摘要式标题。
+
+    防御: LLM 偶尔返回 source_guidelines 里混 dict 对象（如 {"name":"..."}），
+    先规整成 str 再处理，避免 .strip() 炸。
+    """
+    if file_name is None:
+        return "未知来源"
+    if isinstance(file_name, dict):
+        file_name = (file_name.get("name") or file_name.get("title")
+                     or file_name.get("guideline_title")
+                     or str(file_name))
+    elif not isinstance(file_name, str):
+        file_name = str(file_name)
+
+    if not file_name:
+        return "未知来源"
+
+    name = file_name.strip()
+
+    # 去掉文件扩展名
+    lower = name.lower()
+    for ext in [".mp4", ".mp3", ".wav", ".mov", ".avi", ".mkv", ".flv", ".m4a"]:
+        if lower.endswith(ext):
+            name = name[: -len(ext)]
+            break
+
+    # 处理抖音/快手等平台原始文件名
+    if "抖音" in name or "douyin" in lower:
+        # 提取可能的主题词
+        import re
+        # 去掉平台名和数字ID
+        cleaned = re.sub(r"抖音|douyin|快手|kuaishou", "", name, flags=re.IGNORECASE)
+        cleaned = re.sub(r"\d{6,}", "", cleaned).strip(" -_")
+        if cleaned:
+            return f"专家科普视频：{cleaned}"
+        return "专家科普视频"
+
+    # 处理纯数字ID文件名
+    import re
+    if re.match(r"^[\d\s\-_]+$", name):
+        return "专家媒体资料"
+
+    # 去掉常见的乱码前缀
+    cleaned = re.sub(r"^[a-f0-9]{8,}[_\-\s]*", "", name, flags=re.IGNORECASE).strip()
+    if cleaned and cleaned != name:
+        return cleaned
+
+    return name
 
 
 def _format_sql_context(sql_results: List[Dict]) -> str:
@@ -1111,11 +1208,26 @@ def safety_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
     query = state.get("original_query", "")
     logger.info(f"安全护栏检查: query='{query[:50]}'")
 
+    # ========== 前置放行 0：对上一轮 AI 追问的补充回答 ==========
+    # ⚠️ 必须在安全缓存之前！否则旧缓存里的拦截记录会盖过追问检测
+    # 如果 conversation_context 里上一轮 AI 是追问（"请补充必要信息"等），
+    # 用户当前输入一定是在补充饮食计划所需的个人信息（年龄/疾病/身高/体重等），
+    # 不属于疾病诊断咨询，直接放行
+    conv_ctx = state.get("conversation_context", []) or []
+    if _is_reply_to_clarification(conv_ctx):
+        logger.info(f"🚦 前置放行 #0 追问补充: query='{query[:50]}'")
+        cache = _get_cache_service()
+        cache["set_safety"](query, {"is_safe": True, "category": "clarification_reply"})
+        return {
+            "safety_blocked": False,
+            "safety_category": "none",
+        }
+
     # ---- 第1层优化：安全缓存检查 ----
     cache = _get_cache_service()
     cached_safety = cache["get_safety"](query)
     if cached_safety is not None:
-        logger.info(f"安全缓存命中: query='{query[:50]}', blocked={cached_safety.get('is_safe')}")
+        logger.info(f"安全缓存命中: query='{query[:50]}', is_safe={cached_safety.get('is_safe')}")
         if not cached_safety.get("is_safe", True):
             reply = cached_safety.get("reply", "")
             return {
@@ -1402,6 +1514,10 @@ def plan_generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     goal_type = state.get("goal_type", "health_maintenance")
     original_query = state.get("original_query", "")
     plan_style_directive = state.get("plan_style_directive", "")
+    # 从 state 读取 plan_duration（来自 intent_recognizer_node / 追问上下文），默认 1_day 防超时
+    plan_duration = state.get("plan_duration") or "1_day"
+    if plan_duration not in {"1_day", "7_days", "30_days"}:
+        plan_duration = "1_day"
 
     try:
         from src.repositories.session import SessionLocal
@@ -1448,6 +1564,9 @@ def plan_generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
             # 3. 使用 state 中已检索的向量结果（来自主 RAG 管道）
             vector_results = state.get("vector_results", [])
             guideline_context = ""
+            # 从检索元数据中提取真实指南标题列表（用于 LLM 填充 source_guidelines）
+            guideline_titles: List[str] = []
+            _seen_titles = set()
             if vector_results:
                 lines = []
                 for i, item in enumerate(vector_results[:8], 1):
@@ -1458,8 +1577,13 @@ def plan_generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
                     if len(content) > 600:
                         content = content[:600] + "..."
                     lines.append(f"{i}. 【来源: {source}（{source_type}）】{content}")
+                    # 收集真实的 guideline_title（去重）
+                    gt = meta.get("guideline_title")
+                    if gt and gt not in _seen_titles:
+                        _seen_titles.add(gt)
+                        guideline_titles.append(gt)
                 guideline_context = "\n\n".join(lines)
-                logger.info(f"plan_generator: 使用主 RAG 管道的 {len(vector_results)} 条检索结果，上下文长度 {len(guideline_context)} 字符")
+                logger.info(f"plan_generator: 使用主 RAG 管道的 {len(vector_results)} 条检索结果，上下文长度 {len(guideline_context)} 字符，真实指南名 {guideline_titles}")
             else:
                 # 回退：内部 RAG 检索
                 logger.info("plan_generator: 主 RAG 无结果，回退到内部检索")
@@ -1467,11 +1591,31 @@ def plan_generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
                 rag_query = _build_plan_query(profile)
                 guideline_context = _retrieve_guidelines(rag_query)
 
+            # 🆕 关键兜底！用 info_collector 选出来的 selected_guidelines 补齐 guideline_titles
+            # 向量检索可能因为相似度不够漏掉疾病专属指南 → 直接用 info_collector 的正确选择
+            _selected = state.get("selected_guidelines") or []
+            for _st in _selected:
+                if _st not in _seen_titles:
+                    _seen_titles.add(_st)
+                    guideline_titles.append(_st)
+            if len(_selected) > 0 and _selected != guideline_titles:
+                logger.info(f"plan_generator: 用 info_collector 选择补全指南 → {guideline_titles}")
+
             # 4. 调用 generate_plan（已封装 LLM + 持久化）
+            # 🆕 把 sources（含 expert_media 视频等）也传进去 → 前端渲染参考资料卡片
+            _sources_for_plan = state.get("sources", []) or [
+                {"file_name": v.get("metadata", {}).get("file_name", "未知"),
+                 "source_type": v.get("metadata", {}).get("source_type", "guideline"),
+                 "source_label": "知识库"}
+                for v in (vector_results or [])[:5]
+            ]
             result = generate_plan(db, user_id=user_id, goal_type=goal_type,
                                    profile_override=profile,
                                    guideline_context_override=guideline_context,
-                                   style_directive=plan_style_directive or None)
+                                   style_directive=plan_style_directive or None,
+                                   plan_duration=plan_duration,
+                                   guideline_titles=guideline_titles,
+                                   sources_override=_sources_for_plan)
         finally:
             db.close()
 
@@ -1486,7 +1630,7 @@ def plan_generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
         plan_id = result.get("plan_id")
 
         # 3. 将计划格式化为聊天窗口可展示的文本
-        answer = _format_plan_for_chat(plan_config, plan_id, goal_type)
+        answer = _format_plan_for_chat(plan_config, plan_id, goal_type, plan_duration=plan_duration)
 
         # 3.1 追加软提示（地区缺失/疾病默认无等，不阻断流程，由 info_collector 产出）
         soft = state.get("soft_clarifications") or []
@@ -1507,6 +1651,9 @@ def plan_generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
 
         return {
             "plan_config": plan_config,
+            "plan_id": plan_id,
+            "goal_type": goal_type,
+            "plan_duration": plan_duration,
             "generated_answer": answer,
             "sources": sources,
             "answer_source": "knowledge_base",
@@ -1516,19 +1663,27 @@ def plan_generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
         logger.error(f"计划生成节点异常: {e}")
         return {
             "plan_config": {},
+            "plan_duration": plan_duration,
             "generated_answer": f"计划生成异常: {e}",
             "sources": [],
             "error": str(e),
         }
 
 
-def _format_plan_for_chat(plan_config: Dict[str, Any], plan_id: int, goal_type: str) -> str:
+def _format_plan_for_chat(plan_config: Dict[str, Any], plan_id: int, goal_type: str, plan_duration: str = "1_day") -> str:
     """将 plan_config 格式化为聊天窗口可读的文本"""
     parts = []
 
     summary = plan_config.get("summary", "")
     target_cal = plan_config.get("target_calories", "")
-    parts.append(f"🎯 已为您生成饮食计划（计划ID: {plan_id}，目标: {goal_type}）\n")
+    
+    # 判断是周计划还是单日计划
+    days = plan_config.get("days", [])
+    if days and len(days) > 1:
+        parts.append(f"🎯 已为您生成{'月度' if plan_duration == '30_days' else '一周'}饮食计划（计划ID: {plan_id or '未保存'}，目标: {goal_type}，共{len(days)}天）\n")
+    else:
+        parts.append(f"🎯 已为您生成 1 天示范饮食计划（计划ID: {plan_id or '未保存'}，目标: {goal_type}）\n")
+    
     if summary:
         parts.append(f"📋 {summary}")
     if target_cal:
@@ -1542,32 +1697,49 @@ def _format_plan_for_chat(plan_config: Dict[str, Any], plan_id: int, goal_type: 
             f"碳水 {macros.get('carbs_g', '?')}g"
         )
 
-    meals = plan_config.get("meals", [])
-    if meals:
-        parts.append("\n🍽️ 每日餐次安排:")
-        meal_name_map = {"breakfast": "早餐", "lunch": "午餐", "dinner": "晚餐", "snack": "加餐"}
+    meal_name_map = {"breakfast": "早餐", "lunch": "午餐", "dinner": "晚餐", "snack": "加餐"}
+
+    def _format_meals(meals, indent="  "):
+        """格式化一天的餐次"""
+        lines = []
         for meal in meals:
             meal_type = meal_name_map.get(meal.get("meal_type", ""), meal.get("meal_type", ""))
             time = meal.get("time", "")
-            parts.append(f"\n  [{meal_type}] {time}")
+            lines.append(f"{indent}[{meal_type}] {time}")
             for item in meal.get("items", []):
-                food_line = f"    • {item.get('food', '?')} {item.get('quantity', '')} ({item.get('calories', '?')} kcal)"
+                food_line = f"{indent}  • {item.get('food', '?')} {item.get('quantity', '')} ({item.get('calories', '?')} kcal)"
                 cooking = item.get("cooking_method", "")
                 if cooking:
                     food_line += f"  👨‍🍳 {cooking}"
-                parts.append(food_line)
+                lines.append(food_line)
             if meal.get("total_calories"):
-                parts.append(f"    小计: {meal['total_calories']} kcal")
-            # 烹饪步骤
-            recipe_steps = meal.get("recipe_steps", [])
-            if recipe_steps and isinstance(recipe_steps, list):
-                parts.append("    📝 做法步骤:")
-                for step in recipe_steps:
-                    parts.append(f"      {step}")
+                lines.append(f"{indent}  小计: {meal['total_calories']} kcal")
+        return lines
+
+    if days:
+        # 周计划/月度计划：按天展示（预览前 3 天，避免聊天窗口过长）
+        preview_max = 3 if plan_duration == "30_days" else len(days)
+        if len(days) > preview_max:
+            parts.append(f"\n🍽️ 餐次安排（共{len(days)}天，前{preview_max}天预览，完整内容查看「个人中心 > 我的计划」）:")
+        else:
+            parts.append(f"\n🍽️ 餐次安排（共{len(days)}天）:")
+        for day in days[:preview_max]:
+            day_label = day.get("day_label", f"第{day.get('day', '?')}天")
+            meals = day.get("meals", [])
+            day_total = sum(m.get("total_calories", 0) for m in meals)
+            parts.append(f"\n  📅 {day_label}（合计约 {day_total} kcal）")
+            parts.extend(_format_meals(meals, indent="    "))
+    else:
+        # 兼容旧的单日计划格式
+        meals = plan_config.get("meals", [])
+        if meals:
+            parts.append("\n🍽️ 每日餐次安排:")
+            parts.extend(_format_meals(meals))
 
     source_guidelines = plan_config.get("source_guidelines", [])
     if source_guidelines and isinstance(source_guidelines, list):
-        parts.append("\n📖 参考指南: " + "、".join(source_guidelines))
+        beautified = [_beautify_source_name(s) for s in source_guidelines]
+        parts.append("\n📖 参考指南: " + "、".join(beautified))
 
     advice = plan_config.get("advice", "")
     if advice:
@@ -1577,9 +1749,31 @@ def _format_plan_for_chat(plan_config: Dict[str, Any], plan_id: int, goal_type: 
     if precautions:
         parts.append(f"⚠️ 注意: {precautions}")
 
+    # 🆕 月度计划：展示 food_swap_pool 可置换食物池
+    swap_pool = plan_config.get("food_swap_pool")
+    if swap_pool and isinstance(swap_pool, dict) and len(swap_pool) >= 3:
+        parts.append("\n\n🔄 **可置换食物池（4周不重复方案）**:")
+        parts.append("在上面 7 天基准周基础上，每周替换 1-2 种食材即可实现 4 周不重复。")
+        for cat, items in swap_pool.items():
+            if items and isinstance(items, list):
+                items_str = "、".join(str(x) for x in items[:8])  # 每类最多显示 8 个
+                if len(items) > 8:
+                    items_str += f" 等 {len(items)} 种"
+                parts.append(f"  • **{cat}**: {items_str}")
+
+    # ====== 升级提示：仅 1 天示范计划提示用户生成更完整计划 ======
+    if plan_duration == "1_day":
+        parts.append(
+            "\n\n✨ 这只是 1 天示范计划（避免长时间等待导致失败）。"
+            "需要我帮您生成完整 7 天周计划或 1 个月的框架性计划吗？点击下方相应按钮即可升级！"
+        )
+    elif plan_duration == "7_days":
+        parts.append(
+            "\n\n✅ 已为您生成完整 7 天计划。如需更长周期（月度框架），可在「个人中心 > 我的计划」中点击升级按钮。"
+        )
+
     parts.append(
-        "\n\n您可以在「饮食计划」模块查看并修改这份计划，"
-        "或调用 PUT /api/v1/plans/{plan_id} 更新计划内容。"
+        "\n\n您可以在「个人中心 > 我的计划」中查看和管理这份计划。"
     )
 
     return "\n".join(parts)
@@ -1932,24 +2126,57 @@ def _extract_gender_from_query(query: str) -> Optional[str]:
 def _extract_weight_from_query(query: str) -> Optional[float]:
     """从用户查询中提取体重"""
     import re
-    # 先尝试 "kg/公斤/千克" 等明确单位
+    # 1) "kg/公斤/千克" 明确单位
     match = re.search(r'(\d{2,3}(?:\.\d+)?)\s*(?:kg|公斤|千克|kilo)', query)
     if match:
         weight = float(match.group(1))
         if 20 < weight < 300:
             return weight
-    # 再尝试单独的 "斤"（避免匹配 "公斤"/"千克" 中的 "斤"）
+    # 2) 单独的 "斤"（避免匹配 "公斤"/"千克" 中的 "斤"）
     match = re.search(r'(\d{2,3}(?:\.\d+)?)\s*斤(?!\s*[克/公/千])', query)
     if match:
         weight = float(match.group(1)) / 2.0
         if 20 < weight < 300:
             return weight
+    # 3) 上下文词 + 裸数字（"体重"/"我重"/"体重是" 明确前导）
+    match = re.search(r'(?:体重|我重|体重是)\s*(\d{2,3}(?:\.\d+)?)', query)
+    if match:
+        raw = float(match.group(1))
+        # >100 大概率是斤 → 换算 kg
+        if 100 <= raw <= 300:
+            kg = raw / 2.0
+            if 30 <= kg <= 200:
+                return kg
+        # 30-100 大概率直接是 kg
+        if 30 <= raw <= 200:
+            return raw
+    # 4) 兜底：query 里有体重相关词时，找 2-3 位数字
+    #    避免把"178"这种纯身高中的3位数错当体重
+    if any(kw in query for kw in ["体重", "我重", "重多少", "体重多少"]):
+        # 先排除有身高词的 3 位数
+        height_numbers = set()
+        for hm in re.finditer(r'(?:身高|我高|多高|身高是)\s*(\d{2,3})', query):
+            height_numbers.add(float(hm.group(1)))
+        numbers = re.findall(r'\d{2,3}(?:\.\d+)?', query)
+        for n_str in numbers:
+            n = float(n_str)
+            if n in height_numbers:
+                continue
+            # kg 合理范围 30-200
+            if 30 <= n <= 200:
+                return n
+            # 100-300 大概率斤
+            if 100 <= n <= 300:
+                kg = n / 2.0
+                if 30 <= kg <= 200:
+                    return kg
     return None
 
 
 def _extract_height_from_query(query: str) -> Optional[float]:
     """从用户查询中提取身高"""
     import re
+    # 1) 明确单位 cm/厘米/公分/米
     match = re.search(r'(\d{2,3}(?:\.\d+)?)\s*(?:cm|厘米|公分|米)', query)
     if match:
         height = float(match.group(1))
@@ -1957,6 +2184,25 @@ def _extract_height_from_query(query: str) -> Optional[float]:
             height = height * 100
         if 50 < height < 250:
             return height
+    # 2) 上下文词 + 裸数字（明确前导词，避免"身高"里的"高"被单独匹配）
+    #    例："身高178"、"我178高"、"我高178"、"多高180"、"身高是178"
+    match = re.search(r'(?:身高|我身高|我高|多高|身高是|我)\s*(\d{2,3})|(\d{2,3})\s*(?:高)', query)
+    if match:
+        raw = match.group(1) or match.group(2)
+        if raw:
+            height = float(raw)
+            # < 10 可能是米 → 换算 cm
+            if height < 10:
+                height = height * 100
+            if 50 < height < 250:
+                return height
+    # 3) 兜底：query 里出现身高相关词时，找 3 位数字（100-250cm 合理范围）
+    if any(kw in query for kw in ["身高", "多高", "多少高", "身高多少", "身高是"]):
+        numbers = re.findall(r'\d{2,3}', query)
+        for n_str in numbers:
+            n = float(n_str)
+            if 100 <= n <= 250:
+                return n
     return None
 
 
@@ -2086,6 +2332,55 @@ def _accumulate_profile_from_context(
     return profile
 
 
+def _run_bare_number_inference(text: str, profile_info: Dict[str, Any]) -> None:
+    """
+    裸数字智能推断（独立函数，供多轮累积和当前 query 共用）：
+    用户常说 "26岁 158 130斤" / "158高 130重" —— 158/130 裸数字没单位，正则提取可能漏。
+    规则：有体重→裸数字=身高；有身高→裸数字=体重(>100算斤÷2)；双裸数→大的身高，小的体重
+    会原地修改 profile_info（补充 height/weight）。
+    """
+    import re as _re
+    UNIT_WORDS = r'(cm|厘米|公分|mm|米|斤|公斤|kg|KG|磅|lbs|lb|岁|年|月|个|周|天|%|g|mg|ml|两|克)'
+    bare_nums = [
+        float(m.group(1)) for _p, m in [
+            (m.start(), m) for m in _re.finditer(
+                r'(?<![\d.])(\d{2,3})(?!' + UNIT_WORDS + r')', text
+            )
+        ]
+    ]
+    if not bare_nums:
+        return
+    _h = profile_info.get("height")
+    _w = profile_info.get("weight")
+
+    if _h is None and _w is not None:
+        candidates = [v for v in bare_nums if 60 <= v <= 250 and abs(v - _w) > 5]
+        if candidates:
+            profile_info["height"] = max(candidates)
+            logger.info(f"裸数字推断(累积): weight={_w}有 → height={profile_info['height']}")
+
+    elif _w is None and _h is not None:
+        candidates = [v for v in bare_nums if 30 <= v <= 200 and abs(v - _h) > 5]
+        if candidates:
+            raw = max(candidates)
+            profile_info["weight"] = raw / 2.0 if raw > 100 else raw
+            logger.info(f"裸数字推断(累积): height={_h}有 → weight={profile_info['weight']}")
+        else:
+            fallback = [v for v in bare_nums if 30 <= v <= 200]
+            if fallback:
+                raw = min(fallback)
+                profile_info["weight"] = raw / 2.0 if raw > 100 else raw
+                logger.info(f"裸数字推断(累积兜底): height={_h}有 → weight={profile_info['weight']}")
+
+    elif _h is None and _w is None and len(bare_nums) >= 2:
+        vals = sorted([v for v in bare_nums if 60 <= v <= 250])
+        if len(vals) >= 2:
+            big, small = vals[-1], vals[-2]
+            profile_info["height"] = big
+            profile_info["weight"] = small / 2.0 if small > 100 else small
+            logger.info(f"裸数字双推断(累积): h={big}, w={profile_info['weight']}")
+
+
 def info_collector_node(state: Dict[str, Any]) -> Dict[str, Any]:
     """
     信息收集节点 —— 收集用户年龄、地区、性别、身高、体重、疾病等信息
@@ -2126,6 +2421,9 @@ def info_collector_node(state: Dict[str, Any]) -> Dict[str, Any]:
     q_diseases = _extract_diseases_from_query(original_query)
     if q_diseases:
         profile_info["diseases"] = q_diseases
+
+    # 1.5 🆕 裸数字智能推断（独立函数，后面 3.2/3.3 累积时也会再跑一次）
+    _run_bare_number_inference(original_query, profile_info)
 
     # 2. 从数据库读取用户档案
     db_profile = None
@@ -2168,6 +2466,23 @@ def info_collector_node(state: Dict[str, Any]) -> Dict[str, Any]:
     # 3.1 guest 无 DB 档案：从对话上下文多轮累积
     if not db_profile:
         profile_info = _accumulate_profile_from_context(ctx, profile_info)
+
+    # 🆕 3.2 把所有 user 消息拼起来，再跑一遍裸数字推断！
+    # 因为 ctx 累积只跑正则提取（"130重" 的 "重" 不是 weight 关键词 → 返回 None）
+    # 裸数字推断才能补回 weight=130/2=65 这种信息
+    if (profile_info.get("height") is None or profile_info.get("weight") is None) and ctx:
+        all_user_text = " ".join(
+            m.get("content", "") for m in ctx if m.get("role") == "user"
+        )
+        # 加上当前 query（如果还没加进 ctx）
+        if original_query and original_query not in all_user_text:
+            all_user_text += " " + original_query
+        if all_user_text.strip():
+            _run_bare_number_inference(all_user_text, profile_info)
+
+    # 3.3 当前 query 再跑一次裸数字推断（以防 all_user_text 也没覆盖到）
+    if original_query and (profile_info.get("height") is None or profile_info.get("weight") is None):
+        _run_bare_number_inference(original_query, profile_info)
 
     # 4. goal_type → health_goal（来自意图识别器）
     goal_type = state.get("goal_type", "")
@@ -2232,7 +2547,8 @@ def info_collector_node(state: Dict[str, Any]) -> Dict[str, Any]:
         clar = (
             "为了制定精准的饮食计划，请补充以下必要信息：\n\n"
             + "\n".join(q_parts)
-            + "\n\n（您也可以一次性提供，例如：28岁 男 175cm 80kg 想减肥）"
+            + "\n\n如果有慢性病也请一并告知，例如：糖尿病 / 高血压 / 高尿酸 / 痛风 / 慢性肾病 / 骨质疏松 / 脂肪肝 等。\n"
+            + "\n（您也可以一次性提供，例如：28岁 男 175cm 80kg 高尿酸 想减肥）"
         )
         state_updates["needs_clarification"] = True
         state_updates["clarification_question"] = clar

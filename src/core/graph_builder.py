@@ -77,8 +77,11 @@ def _route_after_intent(state: Dict[str, Any]) -> Any:
         return "info_collector"
 
     if intent == "food_search":
-        logger.info("意图分流: food_search → sql_retriever")
-        return "sql_retriever"
+        logger.info("意图分流: food_search → sql_retriever + vector_retriever (并行，支持GI数据检索)")
+        return [
+            Send(node="sql_retriever", arg=state),
+            Send(node="vector_retriever", arg=state),
+        ]
 
     if intent == "guideline_query":
         logger.info("意图分流: guideline_query → vector_retriever")

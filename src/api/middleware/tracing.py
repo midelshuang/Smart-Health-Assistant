@@ -12,6 +12,7 @@
 import time
 import logging
 from typing import Callable, Awaitable, Optional
+from urllib.parse import parse_qsl, urlencode
 
 from fastapi import Request, Response
 from starlette.middleware.base import BaseHTTPMiddleware
@@ -44,6 +45,21 @@ _SENSITIVE_HEADERS = {
     "set-cookie",
     "x-api-key",
 }
+
+# 敏感 query 参数关键词（小写匹配）：token、密码、密钥等
+# 命中后，对应参数值会被替换为 [REDACTED]，避免泄漏到 span / 日志
+_SENSITIVE_QUERY_KEYS = {
+    "token", "access_token", "refresh_token", "id_token", "bearer",
+    "password", "passwd", "pwd", "old_password", "new_password",
+    "secret", "client_secret", "api_key", "apikey", "apikey",
+    "private_key", "privatekey",
+    "authorization", "auth",
+    "code",  # OAuth authorization code 一次性但仍然敏感
+    "session", "session_id", "sessionid",
+    "csrf", "csrf_token",
+}
+
+_REDACTED = "[REDACTED]"
 
 
 class TracingMiddleware(BaseHTTPMiddleware):
@@ -78,11 +94,13 @@ class TracingMiddleware(BaseHTTPMiddleware):
             context=parent_context,
         ) as span:
             span.set_attribute("http.method", request.method)
-            span.set_attribute("http.url", str(request.url))
+            # URL 与 query 在写入 span 前先脱敏，避免 token/password 泄漏
+            sanitized_query = self._sanitize_query(request.url.query)
+            span.set_attribute("http.url", self._sanitize_url(str(request.url), sanitized_query))
             span.set_attribute("http.scheme", request.url.scheme)
             span.set_attribute("http.target", request.url.path)
-            if request.url.query:
-                span.set_attribute("http.query", request.url.query)
+            if sanitized_query:
+                span.set_attribute("http.query", sanitized_query)
             span.set_attribute(
                 "http.user_agent",
                 request.headers.get("user-agent", "unknown"),
@@ -145,6 +163,46 @@ class TracingMiddleware(BaseHTTPMiddleware):
             else:
                 normalized.append(part)
         return "/".join(normalized)
+
+    @staticmethod
+    def _sanitize_query(query: str) -> str:
+        """
+        对 URL query 字符串做敏感参数脱敏
+
+        规则：
+        - 参数名（忽略大小写）命中 _SENSITIVE_QUERY_KEYS 时，值替换为 [REDACTED]
+        - 其他参数保留原值，便于排查问题
+        - 空查询直接返回空字符串
+        - 解析失败时返回 [REDACTED_QUERY]，宁可看不到也不要泄漏
+        """
+        if not query:
+            return ""
+        try:
+            pairs = parse_qsl(query, keep_blank_values=True)
+            redacted = []
+            for k, v in pairs:
+                if k.lower() in _SENSITIVE_QUERY_KEYS:
+                    redacted.append((k, _REDACTED))
+                else:
+                    redacted.append((k, v))
+            return urlencode(redacted)
+        except Exception:
+            return _REDACTED
+
+    @staticmethod
+    def _sanitize_url(url: str, sanitized_query: str) -> str:
+        """
+        用脱敏后的 query 重写 URL，避免 http.url span 属性泄漏敏感参数
+
+        - 若没有脱敏后的 query（原 URL 无 query 或被清空），直接返回不含 ? 的 URL
+        - 否则把原始 query 段替换为脱敏后的 query 段
+        """
+        if "?" not in url:
+            return url
+        base, _ = url.split("?", 1)
+        if not sanitized_query:
+            return base
+        return f"{base}?{sanitized_query}"
 
     @staticmethod
     def _extract_parent_context(request: Request) -> Optional[otel_context.Context]:

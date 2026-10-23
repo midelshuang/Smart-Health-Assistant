@@ -26,6 +26,7 @@ from src.services.plan_service import (
     delete_plan,
     checkin_plan,
     list_checkins,
+    save_plan_config,
 )
 from src.services.auth_service import get_current_user_id, oauth2_scheme
 from src.utils.logger import setup_logger
@@ -52,6 +53,12 @@ class PlanGenerateRequest(BaseModel):
 class PlanConfigUpdateRequest(BaseModel):
     """更新计划 config 请求体"""
     config: Dict[str, Any] = Field(..., description="新的计划 config（JSONB 结构）")
+
+
+class PlanSaveConfigRequest(BaseModel):
+    """保存已有计划 config（手动保存/前端兜底）"""
+    config: Dict[str, Any] = Field(..., description="计划 config（直接入库，不调用 LLM）")
+    goal_type: str = Field(default="health_maintenance", description="目标类型")
 
 
 class PlanCheckInRequest(BaseModel):
@@ -102,8 +109,38 @@ def generate_diet_plan(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"生成计划异常: {e}")
-        raise HTTPException(status_code=500, detail=f"生成计划异常: {e}")
+        logger.error(f"生成计划异常: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="生成计划失败，请稍后重试或联系管理员")
+
+
+@router.post("/save-config")
+def save_plan_config_api(
+    body: PlanSaveConfigRequest,
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """
+    手动保存一份已有的计划 config（前端兜底）
+
+    场景：RAG 聊天里生成的计划因为是匿名/状态不匹配等原因未自动入库，
+    前端拿到 config 后调用此接口直接保存，不走 LLM 重新生成。
+    """
+    try:
+        result = save_plan_config(
+            db=db,
+            user_id=current_user_id,
+            goal_type=body.goal_type,
+            config=body.config,
+        )
+        if not result.get("success", False):
+            raise HTTPException(status_code=400, detail=result.get("error", "保存失败"))
+        return result
+    except HTTPException:
+        raise
+    except Exception as e:
+        logger.error(f"手动保存计划异常: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="保存失败")
 
 
 @router.get("")

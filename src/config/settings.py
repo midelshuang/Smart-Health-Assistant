@@ -1,14 +1,18 @@
 import os
 import dotenv
+import yaml
 
-base_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+base_dir = os.path.dirname(os.path.dirname(
+    os.path.dirname(os.path.abspath(__file__))))
 # print(base_dir)
 
 # 规定文件路径（营养成分表）
-Nutrition_file_path = os.path.join(base_dir, 'raw_data', 'china-food-composition-data', 'json_data')
+Nutrition_file_path = os.path.join(
+    base_dir, 'raw_data', 'china-food-composition-data', 'json_data')
 # print(Nutrition_file_path)
 # 指定GI文件路径
-GI_file_path = os.path.join(base_dir, 'raw_data','china-food-composition-data', 'json_gi_of_foods','glycemic_index_of_foods.json')
+GI_file_path = os.path.join(base_dir, 'raw_data', 'china-food-composition-data',
+                            'json_gi_of_foods', 'glycemic_index_of_foods.json')
 # print(GI_file_path)
 
 # 数据库连接字符串
@@ -72,7 +76,8 @@ EMBEDDING_DIMENSION = int(os.getenv("EMBEDDING_DIMENSION", "1024"))
 # ChromaDB 配置
 CHROMA_HOST = os.getenv("CHROMA_HOST", "localhost")
 CHROMA_PORT = int(os.getenv("CHROMA_PORT", "8000"))
-CHROMA_COLLECTION_NAME = os.getenv("CHROMA_COLLECTION_NAME", "authoritative_sources")
+CHROMA_COLLECTION_NAME = os.getenv(
+    "CHROMA_COLLECTION_NAME", "authoritative_sources")
 
 # RAG 管道配置
 RAG_TOP_K = int(os.getenv("RAG_TOP_K", "10"))
@@ -81,7 +86,8 @@ RAG_MAX_REWRITE = int(os.getenv("RAG_MAX_REWRITE", "2"))
 RAG_CHUNK_SIZE = int(os.getenv("RAG_CHUNK_SIZE", "500"))
 RAG_CHUNK_OVERLAP = int(os.getenv("RAG_CHUNK_OVERLAP", "50"))
 # 追问触发阈值：向量检索最高相似度低于此值时，由 LLM 生成追问而非强行猜测
-RAG_CLARIFICATION_THRESHOLD = float(os.getenv("RAG_CLARIFICATION_THRESHOLD", "0.75"))
+RAG_CLARIFICATION_THRESHOLD = float(
+    os.getenv("RAG_CLARIFICATION_THRESHOLD", "0.75"))
 
 # Whisper 语音转写配置
 # model: tiny/base/small/medium/large —— 越大越准确但越慢
@@ -97,7 +103,8 @@ WHISPER_LANGUAGE = os.getenv("WHISPER_LANGUAGE", "zh")
 LANGSMITH_TRACING = os.getenv("LANGSMITH_TRACING", "false").lower() == "true"
 LANGSMITH_API_KEY = os.getenv("LANGSMITH_API_KEY", "")
 LANGSMITH_PROJECT = os.getenv("LANGSMITH_PROJECT", "healthai-rag")
-LANGSMITH_ENDPOINT = os.getenv("LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
+LANGSMITH_ENDPOINT = os.getenv(
+    "LANGSMITH_ENDPOINT", "https://api.smith.langchain.com")
 
 # 将 LangSmith 配置写入 os.environ，确保 LangGraph 能自动读取
 if LANGSMITH_TRACING and LANGSMITH_API_KEY:
@@ -115,7 +122,8 @@ REDIS_PORT = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_PASSWORD = os.getenv("REDIS_PASSWORD", "")
 REDIS_DB = int(os.getenv("REDIS_DB", "0"))
 REDIS_SOCKET_TIMEOUT = float(os.getenv("REDIS_SOCKET_TIMEOUT", "2.0"))
-REDIS_SOCKET_CONNECT_TIMEOUT = float(os.getenv("REDIS_SOCKET_CONNECT_TIMEOUT", "2.0"))
+REDIS_SOCKET_CONNECT_TIMEOUT = float(
+    os.getenv("REDIS_SOCKET_CONNECT_TIMEOUT", "2.0"))
 REDIS_MAX_CONNECTIONS = int(os.getenv("REDIS_MAX_CONNECTIONS", "10"))
 
 # 将 Redis 配置写入 os.environ，供 utils.redis_client 读取
@@ -123,3 +131,20 @@ os.environ.setdefault("REDIS_HOST", REDIS_HOST)
 os.environ.setdefault("REDIS_PORT", str(REDIS_PORT))
 os.environ.setdefault("REDIS_PASSWORD", REDIS_PASSWORD)
 os.environ.setdefault("REDIS_DB", str(REDIS_DB))
+
+# ============================================================
+# config.yaml 加载（结构化配置）
+# ============================================================
+
+_config_yaml_path = os.path.join(base_dir, "config.yaml")
+if os.path.exists(_config_yaml_path):
+    with open(_config_yaml_path, "r", encoding="utf-8") as _f:
+        _CONFIG = yaml.safe_load(_f) or {}
+else:
+    _CONFIG = {}
+
+# 便捷访问
+CACHE_TTL = _CONFIG.get("cache", {})
+SAFETY_CONFIG = _CONFIG.get("safety", {})
+STREAMING_CONFIG = _CONFIG.get("streaming", {})
+PLAN_CONFIG = _CONFIG.get("plan", {})

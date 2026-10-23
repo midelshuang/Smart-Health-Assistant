@@ -1,0 +1,6 @@
+Count,Message,Traceback,Nodes
+136,No tasks defined on RAGQueryUser. Use the @task decorator or set the 'tasks' attribute of the User (or mark it as abstract = True if you only intend to subclass it),"  File ""D:\conda-envs\health_ai_env\lib\site-packages\locust\user\task.py"", line 335, in run
+    self.schedule_task(self.get_next_task())
+  File ""D:\conda-envs\health_ai_env\lib\site-packages\locust\user\task.py"", line 479, in get_next_task
+    raise Exception(
+",local

@@ -41,6 +41,7 @@ class RAGState(TypedDict, total=False):
     _stream_system_prompt: str
     plan_config: Dict[str, Any]
     goal_type: str
+    plan_duration: str                  # 1_day / 7_days / 30_days —— 由 intent_recognizer 设置，跨节点传递
     safety_blocked: bool
     safety_category: str
     safety_reason: str

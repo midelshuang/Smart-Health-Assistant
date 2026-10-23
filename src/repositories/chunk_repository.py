@@ -175,10 +175,11 @@ def keyword_search(
 
         if has_tsv_col:
             # 走 BM25 路径：content_tsvector @@ plainto_tsquery
-            # ts_rank_cd(tsv, query, [normalization]) —— normalization=32 表示
-            # 使用文档长度归一化（BM25 的长度惩罚项）
+            # 中文预分词：在每个汉字后加空格（与触发器一致）
+            # 让 simple 配置能正确分词（simple 按空白分词，对连写中文无效）
             conditions.append(
-                f"content_tsvector @@ plainto_tsquery('{_TS_CONFIG}', :query_text)"
+                f"content_tsvector @@ plainto_tsquery('{_TS_CONFIG}', "
+                f"regexp_replace(:query_text, '([\\u4e00-\\u9fff])', '\\1 ', 'g'))"
             )
 
             where_clause = " AND ".join(conditions) if conditions else "TRUE"
@@ -188,7 +189,8 @@ def keyword_search(
                        file_name, age_group, region, disease_tags,
                        char_count,
                        ts_rank_cd(content_tsvector,
-                                  plainto_tsquery('{_TS_CONFIG}', :query_text),
+                                  plainto_tsquery('{_TS_CONFIG}',
+                                      regexp_replace(:query_text, '([\\u4e00-\\u9fff])', '\\1 ', 'g')),
                                   32) AS score
                 FROM document_chunks
                 WHERE {where_clause}

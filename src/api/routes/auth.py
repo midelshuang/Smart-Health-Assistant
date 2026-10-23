@@ -8,11 +8,12 @@
 3. POST /auth/send-code             —— 发送邮箱验证码
 4. POST /auth/login                 —— 登录（用户名或邮箱）
 5. POST /auth/refresh               —— 刷新 Access Token
-6. POST /auth/change-password       —— 修改密码（需登录）
-7. POST /auth/forgot-password       —— 通过安全问题重置密码
-8. GET  /auth/security-question     —— 查询某账号的安全问题
+6. POST /auth/logout                —— 登出（撤销当前 access + 传入的 refresh token）
+7. POST /auth/change-password       —— 修改密码（需登录，改密后撤销当前 token）
+8. POST /auth/forgot-password       —— 通过安全问题重置密码
+9. GET  /auth/security-question     —— 查询某账号的安全问题
 """
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, status, Header
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from pydantic import BaseModel, Field
@@ -29,7 +30,10 @@ from src.services.auth_service import (
     change_password as _change_password,
     reset_password_via_security as _reset_password,
     get_current_user_id, get_current_user_optional,
+    decode_token, revoke_token, is_token_revoked,
+    _calc_token_ttl_seconds,
     ACCESS_TOKEN_EXPIRE_MINUTES, REFRESH_TOKEN_EXPIRE_DAYS,
+    KEY_TTL_ACCESS_BLACKLIST, KEY_TTL_REFRESH_BLACKLIST,
 )
 from src.services.user_service import get_or_create_user
 from src.services.login_limiter import (
@@ -66,6 +70,7 @@ class RegisterRequest(BaseModel):
     password: str
     security_question: Optional[str] = Field(default=None, description="安全问题（可选，用于忘记密码重置）")
     security_answer: Optional[str] = Field(default=None, description="安全问题答案")
+    role: Optional[str] = Field(default="user", description="注册角色: user/expert（管理员需在数据库直接设置）")
 
 
 class EmailRegisterRequest(BaseModel):
@@ -75,6 +80,7 @@ class EmailRegisterRequest(BaseModel):
     code: str = Field(..., description="邮箱验证码")
     security_question: Optional[str] = None
     security_answer: Optional[str] = None
+    role: Optional[str] = Field(default="user", description="注册角色: user/expert（管理员需在数据库直接设置）")
 
 
 class SendCodeRequest(BaseModel):
@@ -106,6 +112,22 @@ class RefreshRequest(BaseModel):
 class ChangePasswordRequest(BaseModel):
     old_password: str
     new_password: str
+    # 可选：客户端传当前 refresh_token，改密成功后一并撤销
+    refresh_token: Optional[str] = Field(
+        default=None,
+        description="可选：当前 refresh_token，改密成功后会一并撤销",
+    )
+
+
+class LogoutRequest(BaseModel):
+    """登出请求体
+
+    refresh_token 可选；若客户端只传 access token 头，可不传 body
+    """
+    refresh_token: Optional[str] = Field(
+        default=None,
+        description="可选：refresh_token，传入则一并撤销",
+    )
 
 
 class ForgotPasswordRequest(BaseModel):
@@ -146,6 +168,11 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
 
+    # 角色校验
+    role = (body.role or "user").lower()
+    if role not in ("user", "expert"):
+        raise HTTPException(status_code=400, detail="仅支持注册普通用户或专家，管理员需在数据库直接设置")
+
     # 检查用户是否已存在
     existing = db.query(User).filter(
         or_(User.username == body.username, User.external_id == body.username)
@@ -163,11 +190,19 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     if not user.username:
         user.username = body.username
 
+    # 设置角色 + 审批状态：专家默认需审批
+    user.role = role
+    user.approved = (role != "expert")  # 专家默认待审批
+
     _set_security_question(user, body.security_question, body.security_answer)
     db.commit()
 
-    logger.info(f"新用户注册成功: {body.username}")
-    return {"message": "注册成功", "external_id": user.external_id}
+    logger.info(f"新用户注册成功: {body.username}, 角色={role}, 审批通过={user.approved}")
+    result = {"message": "注册成功", "external_id": user.external_id, "role": role}
+    if role == "expert":
+        result["message"] = "注册成功，专家账号需等待管理员审批后方可登录"
+        result["need_approval"] = True
+    return result
 
 
 # ============================================================
@@ -201,6 +236,11 @@ def register_with_email(body: EmailRegisterRequest, db: Session = Depends(get_db
     if not ok:
         raise HTTPException(status_code=400, detail=msg)
 
+    # 角色校验
+    role = (body.role or "user").lower()
+    if role not in ("user", "expert"):
+        raise HTTPException(status_code=400, detail="仅支持注册普通用户或专家，管理员需在数据库直接设置")
+
     # 校验验证码
     valid, err = verify_code(body.email, body.code)
     if not valid:
@@ -222,11 +262,19 @@ def register_with_email(body: EmailRegisterRequest, db: Session = Depends(get_db
     user.email = body.email
     user.email_verified = True
 
+    # 设置角色 + 审批状态：专家默认需审批
+    user.role = role
+    user.approved = (role != "expert")  # 专家默认待审批
+
     _set_security_question(user, body.security_question, body.security_answer)
     db.commit()
 
-    logger.info(f"邮箱注册成功: {body.email}")
-    return {"message": "注册成功", "email": body.email}
+    logger.info(f"邮箱注册成功: {body.email}, 角色={role}, 审批通过={user.approved}")
+    result = {"message": "注册成功", "email": body.email, "role": role}
+    if role == "expert":
+        result["message"] = "注册成功，专家账号需等待管理员审批后方可登录"
+        result["need_approval"] = True
+    return result
 
 
 # ============================================================
@@ -265,6 +313,14 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
             status_code=status.HTTP_401_UNAUTHORIZED,
             detail=detail,
             headers={"WWW-Authenticate": "Bearer"},
+        )
+
+    # 2.5 审批检查：专家必须审批通过
+    if user.role == "expert" and not user.approved:
+        record_login_failure(body.username, ip)
+        raise HTTPException(
+            status_code=status.HTTP_403_FORBIDDEN,
+            detail="专家账号尚未通过管理员审批，请耐心等待",
         )
 
     # 3. 登录成功
@@ -350,7 +406,8 @@ def change_password(
 
     - 需要校验旧密码
     - 新密码不能与旧密码相同
-    - 修改成功后所有现有 Token 仍然有效（如需立即失效需登出/黑名单机制）
+    - 修改成功后会撤销当前 access token 与（若传入）refresh token，
+      客户端应引导用户重新登录
     """
     user = db.query(User).filter(User.external_id == current_user_id).first()
     if not user:
@@ -369,7 +426,92 @@ def change_password(
     if not success:
         raise HTTPException(status_code=400, detail="旧密码错误")
 
-    return {"message": "密码修改成功"}
+    # 撤销当前 access token
+    _revoke_access_token_from_header(token, label="change_password access")
+    # 若客户端传了 refresh_token，一并撤销
+    if body.refresh_token:
+        _revoke_refresh_token_if_valid(body.refresh_token, label="change_password refresh")
+
+    return {"message": "密码修改成功，请重新登录"}
+
+
+# ============================================================
+# 6.5 登出（撤销 token）
+# ============================================================
+@router.post("/logout")
+def logout(
+    token: str = Depends(oauth2_scheme),
+    body: Optional[LogoutRequest] = None,
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """登出
+
+    - 撤销当前 access token（写入 Redis 黑名单，TTL 与原 token 对齐）
+    - 若 body 中带 refresh_token，则一并撤销
+    - Redis 不可用时 fail-open：接口返回 200，但 token 实际未撤销，仅靠自然过期
+
+    客户端应在调用后清除本地存储的 access / refresh token。
+    """
+    revoked_access = _revoke_access_token_from_header(token, label="logout access")
+
+    revoked_refresh = False
+    if body and body.refresh_token:
+        revoked_refresh = _revoke_refresh_token_if_valid(
+            body.refresh_token, label="logout refresh"
+        )
+
+    return {
+        "message": "已登出",
+        "access_token_revoked": revoked_access,
+        "refresh_token_revoked": revoked_refresh,
+    }
+
+
+# ============================================================
+# Token 撤销辅助函数
+# ============================================================
+def _revoke_access_token_from_header(token: str, label: str) -> bool:
+    """撤销 access token：解码获取 jti 与 exp，写入黑名单"""
+    try:
+        payload = decode_token(token)
+    except Exception as e:
+        # token 无效或已过期：本来就不能用了，无需撤销，仅记日志
+        logger.info(f"[{label}] token 已无效或过期，跳过撤销: {e}")
+        return False
+
+    jti = payload.get("jti")
+    if not jti:
+        # 旧 token 无 jti，无法撤销；依赖自然过期
+        logger.info(f"[{label}] token 无 jti 字段，跳过撤销（依赖自然过期）")
+        return False
+
+    ttl = _calc_token_ttl_seconds(payload, KEY_TTL_ACCESS_BLACKLIST)
+    return revoke_token(jti, ttl, token_type="access")
+
+
+def _revoke_refresh_token_if_valid(refresh_token: str, label: str) -> bool:
+    """撤销 refresh token：先验证有效，再写黑名单
+
+    失败原因（无效/过期/已撤销）均记日志但不抛异常，避免登出失败
+    """
+    try:
+        sub = verify_refresh_token(refresh_token)
+        # verify_refresh_token 内部已通过黑名单检查，到这里说明未撤销
+    except HTTPException as e:
+        logger.info(f"[{label}] refresh token 无法撤销（已无效或已撤销）: {e.detail}")
+        return False
+
+    try:
+        payload = decode_token(refresh_token)
+        jti = payload.get("jti")
+        if not jti:
+            logger.info(f"[{label}] refresh token 无 jti 字段，跳过撤销")
+            return False
+        ttl = _calc_token_ttl_seconds(payload, KEY_TTL_REFRESH_BLACKLIST)
+        return revoke_token(jti, ttl, token_type="refresh")
+    except Exception as e:
+        logger.warning(f"[{label}] 撤销 refresh token 失败: {e}")
+        return False
 
 
 # ============================================================
@@ -441,6 +583,7 @@ def get_identity(current_user=Depends(get_current_user_optional)):
         "is_authenticated": True,
         "is_guest": False,
         "role": current_user.role,
+        "approved": current_user.approved if hasattr(current_user, "approved") else True,
         "username": current_user.username,
         "external_id": current_user.external_id,
     }

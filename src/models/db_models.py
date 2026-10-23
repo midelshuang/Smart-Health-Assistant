@@ -82,6 +82,9 @@ class User(Base):
     # ===== RBAC 角色 =====
     role = Column(String(20), default='user', nullable=False, comment="角色: user/admin/expert")
 
+    # ===== 专家审批 =====
+    approved = Column(Boolean, default=True, nullable=False, comment="是否已审批(专家注册默认False需管理员审批)")
+
     # ===== V4 预留字段：会员体系 + 多端登录 =====
     membership_tier = Column(String(20), default='free', comment="[V4] 会员等级: free/plus/pro")
     membership_expires_at = Column(DateTime(timezone=True), comment="[V4] 会员到期时间")

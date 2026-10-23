@@ -6,9 +6,11 @@
 import os
 import logging
 from pathlib import Path
+from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse, Response
 from fastapi.staticfiles import StaticFiles
+from fastapi.middleware.cors import CORSMiddleware
 
 
 # 注：oauth2_scheme 已统一移至 Service/auth_service.py，避免与路由模块产生循环导入
@@ -34,21 +36,135 @@ from src.config.tracing import init_tracing, shutdown_tracing
 
 logger = logging.getLogger(__name__)
 
+
+# ============================================================
+# Sentry 集中化错误监控初始化
+# 未配置 SENTRY_DSN 时静默跳过，不影响主流程
+# ============================================================
+def init_sentry():
+    """初始化 Sentry SDK，自动捕获 FastAPI 未处理异常
+
+    环境变量：
+        SENTRY_DSN   - Sentry 项目 DSN（未设置则跳过）
+        APP_ENV      - production 时启用，其他环境默认禁用
+        OTEL_SAMPLE_RATE - 采样率（可选，默认 1.0）
+    """
+    sentry_dsn = os.getenv("SENTRY_DSN", "").strip()
+    if not sentry_dsn:
+        logger.info("SENTRY_DSN 未配置，跳过 Sentry 初始化")
+        return
+
+    try:
+        import sentry_sdk
+        from sentry_sdk.integrations.fastapi import FastApiIntegration
+
+        # 开发环境也允许上报（通过 APP_ENV 控制 traces_sample_rate）
+        app_env = os.getenv("APP_ENV", "development").lower()
+        sample_rate = float(os.getenv("OTEL_SAMPLE_RATE", "1.0"))
+
+        sentry_sdk.init(
+            dsn=sentry_dsn,
+            environment=app_env,
+            traces_sample_rate=sample_rate,
+            send_default_pii=False,  # 不发送 PII（个人身份信息）
+            integrations=[FastApiIntegration()],
+            # 过滤敏感信息：不上报 Authorization / Cookie 头
+            before_send=lambda event, hint: _sentry_scrub(event),
+        )
+        logger.info(f"Sentry 已初始化 (env={app_env}, sample_rate={sample_rate})")
+    except ImportError:
+        logger.warning("sentry-sdk 未安装，跳过 Sentry 初始化")
+    except Exception as e:
+        logger.error(f"Sentry 初始化失败（不影响启动）: {e}")
+
+
+def _sentry_scrub(event):
+    """Sentry 事件脱敏：移除请求头中的敏感字段"""
+    try:
+        headers = event.get("request", {}).get("headers", {})
+        sensitive_keys = {"authorization", "cookie", "x-api-key", "x-token"}
+        for key in list(headers.keys()):
+            if key.lower() in sensitive_keys:
+                headers[key] = "[REDACTED]"
+    except Exception:
+        pass
+    return event
+
+
+# ============================================================
+# 应用生命周期管理（FastAPI lifespan 上下文管理器）
+# 取代 @app.on_event("startup"/"shutdown")，避免 deprecation warning
+# ============================================================
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """应用生命周期：启动钩子 → 服务运行 → 关闭钩子
+
+    启动阶段（yield 之前）：
+    - 初始化 Sentry 错误监控（必须在中间件首次执行前完成）
+    - 初始化 OpenTelemetry 分布式追踪（必须在中间件首次执行前完成）
+    - 预热 Redis / ChromaDB 连接可在此扩展（目前懒加载，不强制）
+
+    关闭阶段（yield 之后）：
+    - 刷新并关闭追踪导出器，确保 span 不丢失
+    - 刷新 Sentry 待发送事件
+    - 数据库连接池由 SQLAlchemy 引擎自动管理，无需显式关闭
+    """
+    logger.info("HealthAI 应用启动中...")
+    init_sentry()
+    logger.info("Sentry 错误监控已初始化（若已配置 SENTRY_DSN）")
+    init_tracing()
+    logger.info("OpenTelemetry 分布式追踪已初始化")
+
+    yield  # 服务运行期间
+
+    logger.info("HealthAI 应用关闭中，开始清理资源...")
+    # 刷新 Sentry 待发送事件
+    try:
+        import sentry_sdk
+        sentry_sdk.flush(timeout=5)
+    except Exception:
+        pass
+    shutdown_tracing()
+    logger.info("HealthAI 应用已关闭")
+
+
 # 创建 FastAPI 实例
 app = FastAPI(
     title="HealthAI Platform",
     description="健康AI平台API",
-    version="1.4.0"
+    version="1.4.0",
+    lifespan=lifespan,
 )
-
-# ============================================================
-# 初始化 OpenTelemetry 分布式追踪
-# ============================================================
-init_tracing()
 
 # ============================================================
 # 注册中间件（注意：注册顺序与执行顺序相反）
 # ============================================================
+# CORS 跨域中间件（最外层，确保预检请求先于业务中间件处理）
+# 生产环境必须通过环境变量 CORS_ALLOWED_ORIGINS 配置白名单域名，逗号分隔
+# 例如：CORS_ALLOWED_ORIGINS=https://healthai.example.com,https://www.healthai.example.com
+_cors_origins_raw = os.getenv("CORS_ALLOWED_ORIGINS", "")
+if _cors_origins_raw.strip():
+    # 显式白名单模式（推荐生产环境）
+    _cors_origins = [o.strip() for o in _cors_origins_raw.split(",") if o.strip()]
+else:
+    # 兜底：开发环境允许本机调试（生产部署必须显式配置白名单）
+    _app_env = os.getenv("APP_ENV", "development").lower()
+    _cors_origins = ["http://localhost:3000", "http://localhost:8000", "http://127.0.0.1:8000"] \
+        if _app_env == "development" else []
+
+if _cors_origins:
+    app.add_middleware(
+        CORSMiddleware,
+        allow_origins=_cors_origins,
+        allow_credentials=True,
+        allow_methods=["GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"],
+        allow_headers=["Authorization", "Content-Type", "X-Trace-Id", "X-Span-Id"],
+        max_age=600,
+    )
+    logger.info(f"CORS 已启用，允许来源: {_cors_origins}")
+else:
+    logger.warning("CORS 未配置：CORS_ALLOWED_ORIGINS 为空且非开发环境，跨域请求将被浏览器拦截")
+
 # API 版本控制中间件（业务层）
 app.add_middleware(APIVersionMiddleware)
 # 追踪中间件（为每个请求创建 root span）
@@ -134,18 +250,22 @@ if _STATIC_DIR.exists():
     async def root():
         """前端演示页面"""
         with open(_STATIC_DIR / "index.html", encoding="utf-8") as f:
-            return Response(content=f.read(), media_type="text/html")
+            content = f.read()
+        # 添加 no-cache 头，确保每次都加载最新版本
+        return Response(
+            content=content,
+            media_type="text/html",
+            headers={
+                "Cache-Control": "no-cache, no-store, must-revalidate",
+                "Pragma": "no-cache",
+                "Expires": "0",
+            },
+        )
 
 
 # 后续所有路由、中间件、事件都注册在这里
 # app.include_router(diet_router, prefix="/api")
 # app.add_middleware(...)
 
-
-# ============================================================
-# 应用生命周期事件
-# ============================================================
-@app.on_event("shutdown")
-async def shutdown_event():
-    """应用关闭时刷新并关闭追踪"""
-    shutdown_tracing()
+# 注：应用生命周期（启动/关闭）已通过 lifespan 上下文管理器统一处理
+# 见上方 @asynccontextmanager async def lifespan(app) 定义

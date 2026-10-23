@@ -36,6 +36,7 @@ class RAGPipeline:
         user_id: str = "",
         conversation_context: Optional[List[Dict[str, str]]] = None,
         stream: bool = False,
+        plan_duration: Optional[str] = None,
     ) -> Dict[str, Any]:
         """
         执行一次完整的 RAG 查询
@@ -45,6 +46,8 @@ class RAGPipeline:
             user_id: 用户标识（用于日志追踪）
             conversation_context: 历史对话上下文
             stream: 是否以流式方式返回（生成器）
+            plan_duration: 🆕 前端可显式指定计划时长（1_day/7_days/30_days），
+                           覆盖意图识别器的关键词判断（更可靠）
 
         Returns:
             包含 answer, sources, intent 等字段的结果字典
@@ -60,6 +63,12 @@ class RAGPipeline:
             "intent": "unknown",
         }
 
+        # 🆕 前端显式传的 plan_duration 放进 state，让意图识别器跳过关键词识别
+        if plan_duration and plan_duration in ("1_day", "7_days", "30_days"):
+            initial_state["plan_duration"] = plan_duration
+            initial_state["intent"] = "plan_generation"
+            logger.info(f"前端显式指定 plan_duration={plan_duration}，跳过意图识别关键词判断")
+
         # 加载用户反馈偏好（注入风格指令）
         if user_id and user_id != "guest":
             try:
@@ -67,8 +76,10 @@ class RAGPipeline:
                 from src.repositories.session import SessionLocal
                 db = SessionLocal()
                 try:
-                    initial_state["feedback_style_directive"] = get_style_directive_for_answer(db, user_id)
-                    initial_state["plan_style_directive"] = get_style_directive_for_plan(db, user_id)
+                    initial_state["feedback_style_directive"] = get_style_directive_for_answer(
+                        db, user_id)
+                    initial_state["plan_style_directive"] = get_style_directive_for_plan(
+                        db, user_id)
                 finally:
                     db.close()
             except Exception as e:
@@ -100,7 +111,8 @@ class RAGPipeline:
         """同步调用：一次性返回完整结果"""
         user_query = initial_state.get("original_query", "")
         user_id = initial_state.get("user_id", "")
-        conversation_context = initial_state.get("conversation_context", []) or []
+        conversation_context = initial_state.get(
+            "conversation_context", []) or []
         has_context = len(conversation_context) > 0
 
         # 🆕 多轮对话（有上下文）时跳过缓存，因为相同查询文本在不同上下文中含义不同
@@ -127,12 +139,17 @@ class RAGPipeline:
             "rewrite_count": result.get("rewrite_count", 0),
             "eval_passed": result.get("eval_passed", False),
             "eval_feedback": result.get("eval_feedback", ""),
+            "plan_config": result.get("plan_config") or None,
+            "plan_id": result.get("plan_id"),
+            "goal_type": result.get("goal_type"),
+            "plan_duration": result.get("plan_duration"),
             "success": True,
             "error": result.get("error", ""),
         }
 
         # 🆕 仅在无上下文时写入缓存（多轮对话结果依赖上下文，不宜缓存）
-        if not has_context:
+        # 计划生成结果不缓存（plan_id 依赖用户登录状态，缓存会导致 plan_id 丢失）
+        if not has_context and not response.get("plan_config"):
             try:
                 from src.services.cache_service import set_cached_query
                 set_cached_query(user_query, response, user_id)
@@ -175,8 +192,10 @@ class RAGPipeline:
                 from src.repositories.session import SessionLocal
                 db = SessionLocal()
                 try:
-                    initial_state["feedback_style_directive"] = get_style_directive_for_answer(db, user_id)
-                    initial_state["plan_style_directive"] = get_style_directive_for_plan(db, user_id)
+                    initial_state["feedback_style_directive"] = get_style_directive_for_answer(
+                        db, user_id)
+                    initial_state["plan_style_directive"] = get_style_directive_for_plan(
+                        db, user_id)
                 finally:
                     db.close()
             except Exception:
@@ -195,7 +214,8 @@ class RAGPipeline:
 
             sources = result.get("sources", [])
             prompt = result.get("_stream_prompt", "")
-            system_prompt = result.get("_stream_system_prompt", SYSTEM_PROMPT_KB)
+            system_prompt = result.get(
+                "_stream_system_prompt", SYSTEM_PROMPT_KB)
             answer_source = result.get("answer_source", "knowledge_base")
 
             yield {"type": "sources", "data": sources}
@@ -217,7 +237,8 @@ class RAGPipeline:
                 full_answer += token
                 yield {"type": "content", "data": token}
 
-            logger.info(f"流式答案生成完成: 来源={answer_source}, 长度={len(full_answer)} 字符")
+            logger.info(
+                f"流式答案生成完成: 来源={answer_source}, 长度={len(full_answer)} 字符")
 
             yield {
                 "type": "done",
@@ -280,7 +301,8 @@ class RAGPipeline:
 
         # 1. 处理文档：加载 + 清洗 + 切分
         processor = DocumentProcessor()
-        chunks = processor.process_directory(target_dir, source_type=source_type)
+        chunks = processor.process_directory(
+            target_dir, source_type=source_type)
 
         if not chunks:
             return {"success": False, "error": "未处理到任何文档块"}
@@ -314,7 +336,8 @@ class RAGPipeline:
         )
 
         stats = vector_store.get_collection_stats()
-        logger.info(f"文档入库完成: {len(chunks)} 个块, Collection 总数: {stats.get('count', 0)}")
+        logger.info(
+            f"文档入库完成: {len(chunks)} 个块, Collection 总数: {stats.get('count', 0)}")
 
         return {
             "success": True,
@@ -402,3 +425,10 @@ class RAGPipeline:
             return False
         except ImportError:
             return False
+
+
+if __name__ == "__main__":
+
+    pipeline = RAGPipeline()
+    result = pipeline.query("鸡蛋的热量是多少？")
+    print(result["answer"])

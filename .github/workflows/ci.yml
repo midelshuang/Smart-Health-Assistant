@@ -1,0 +1,102 @@
+name: CI
+
+on:
+  push:
+    branches: [main, develop]
+  pull_request:
+    branches: [main, develop]
+
+# 同分支串行，避免重复跑
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  lint-test:
+    name: Lint + Test
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    services:
+      postgres:
+        image: postgres:15
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: healthai_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd="pg_isready -U postgres"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+      redis:
+        image: redis:7-alpine
+        ports: ['6379:6379']
+        options: >-
+          --health-cmd="redis-cli ping"
+          --health-interval=10s
+          --health-timeout=5s
+          --health-retries=5
+
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/healthai_test
+      REDIS_HOST: localhost
+      REDIS_PORT: 6379
+      JWT_SECRET_KEY: ci-test-secret-not-for-prod-9f3a2c1b8e7d
+      LLM_API_KEY: test-key
+      LLM_BASE_URL: http://localhost
+      LLM_MODEL: test-model
+      EMBEDDING_API_KEY: test-key
+      EMBEDDING_BASE_URL: http://localhost
+      EMBEDDING_MODEL: test-embed
+      CHROMA_HOST: localhost
+      CHROMA_PORT: 8001
+      APP_ENV: test
+      PYTHONUNBUFFERED: '1'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: 'pip'
+
+      - name: Install dependencies
+        run: |
+          python -m pip install --upgrade pip
+          pip install -r requirements.txt
+          pip install -r requirements-dev.txt || true
+          pip install ruff mypy pip-audit
+
+      - name: Ruff lint
+        run: ruff check src tests || true
+        # 首次启用：先 advisory，不阻断流水线；待代码整改后改为必须通过
+
+      - name: pip-audit security scan
+        run: pip-audit --strict --ignore-vuln GHSA-XXXX
+        # 暂不强制 strict，先看清单
+        continue-on-error: true
+
+      - name: Run tests with coverage
+        env:
+          PYTEST_MARKERS: "not slow and not perf"
+        run: |
+          pytest \
+            --cov=src \
+            --cov-report=term-missing \
+            --cov-report=xml:coverage.xml \
+            --cov-fail-under=40 \
+            -m "${PYTEST_MARKERS}"
+        # 首次启用：阈值设为 40%，避免直接卡 80% 阻断流水线；后续逐步提升
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: coverage-${{ github.sha }}
+          path: coverage.xml
+          retention-days: 14

@@ -1,4 +1,4 @@
-<!doctype html>
+﻿﻿<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
@@ -927,6 +927,118 @@
       .source-link:hover .source-name {
         color: #667eea;
       }
+
+      /* ============================================================ */
+      /* TDEE 结果表格                                                  */
+      /* ============================================================ */
+      .tdee-result {
+        margin-top: 16px;
+        padding: 0;
+      }
+      .tdee-cards {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 12px;
+        margin-bottom: 16px;
+      }
+      .tdee-card {
+        background: #f8fafc;
+        border: 1px solid #e2e8f0;
+        border-radius: 8px;
+        padding: 14px 12px;
+        text-align: center;
+      }
+      .tdee-card-label {
+        font-size: 11px;
+        color: #64748b;
+        margin-bottom: 6px;
+        text-transform: uppercase;
+        letter-spacing: 0.5px;
+      }
+      .tdee-card-value {
+        font-size: 24px;
+        font-weight: 700;
+        color: #1e293b;
+        line-height: 1.2;
+      }
+      .tdee-card-unit {
+        font-size: 12px;
+        color: #94a3b8;
+        margin-left: 2px;
+      }
+      .tdee-card.target {
+        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        border-color: transparent;
+      }
+      .tdee-card.target .tdee-card-value {
+        color: #fff;
+      }
+      .tdee-card.target .tdee-card-label {
+        color: rgba(255, 255, 255, 0.8);
+      }
+      .tdee-card.target .tdee-card-unit {
+        color: rgba(255, 255, 255, 0.7);
+      }
+      .tdee-section-title {
+        font-size: 13px;
+        font-weight: 600;
+        color: #475569;
+        margin: 16px 0 8px;
+        display: flex;
+        align-items: center;
+        gap: 6px;
+      }
+      .tdee-table {
+        width: 100%;
+        border-collapse: collapse;
+        font-size: 13px;
+      }
+      .tdee-table th {
+        background: #f1f5f9;
+        color: #475569;
+        font-weight: 600;
+        padding: 10px 12px;
+        text-align: center;
+        border: 1px solid #e2e8f0;
+        font-size: 12px;
+      }
+      .tdee-table td {
+        padding: 10px 12px;
+        border: 1px solid #e2e8f0;
+        color: #334155;
+        text-align: center;
+      }
+      .tdee-table tr:nth-child(even) td {
+        background: #f8fafc;
+      }
+      .tdee-table .num {
+        text-align: center;
+        font-variant-numeric: tabular-nums;
+      }
+      .tdee-warn {
+        background: #fef3c7 !important;
+        color: #92400e;
+        padding: 10px 14px;
+        border-radius: 6px;
+        margin-top: 12px;
+        font-size: 13px;
+        border: 1px solid #fde68a;
+      }
+      .tdee-advice {
+        background: #f0f9ff;
+        color: #0369a1;
+        padding: 10px 14px;
+        border-radius: 6px;
+        margin-top: 12px;
+        font-size: 13px;
+        border: 1px solid #bae6fd;
+      }
+      .tdee-meta {
+        font-size: 11px;
+        color: #94a3b8;
+        margin-top: 10px;
+        text-align: center;
+      }
     </style>
   </head>
   <body>
@@ -983,7 +1095,7 @@
           </div>
           <div class="info-row" id="loginUserRow" style="display: none">
             <span>用户</span>
-            <span class="val" id="loginUsername">-</span>
+            <span class="val" id="currentUsername">-</span>
           </div>
         </div>
 
@@ -1279,6 +1391,27 @@
               </div>
               <div class="form-row">
                 <div class="form-group">
+                  <label>角色</label>
+                  <select id="regRole">
+                    <option value="user">普通用户</option>
+                    <option value="expert">专家（需管理员审批后登录）</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>&nbsp;</label>
+                  <div
+                    style="
+                      color: var(--text-light);
+                      font-size: 12px;
+                      padding-top: 8px;
+                    "
+                  >
+                    💡 专家账号注册后需等待管理员审批通过方可登录
+                  </div>
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
                   <label>安全问题（可选）</label
                   ><input
                     type="text"
@@ -1306,6 +1439,27 @@
                 <div class="form-group">
                   <label>密码</label
                   ><input type="password" id="emailRegPassword" />
+                </div>
+              </div>
+              <div class="form-row">
+                <div class="form-group">
+                  <label>角色</label>
+                  <select id="emailRegRole">
+                    <option value="user">普通用户</option>
+                    <option value="expert">专家（需管理员审批后登录）</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>&nbsp;</label>
+                  <div
+                    style="
+                      color: var(--text-light);
+                      font-size: 12px;
+                      padding-top: 8px;
+                    "
+                  >
+                    💡 管理员账号需在数据库中设置 role=admin
+                  </div>
                 </div>
               </div>
               <div class="form-row">
@@ -1485,8 +1639,21 @@
             <button class="btn btn-secondary" onclick="fillTDEEFromProfile()">
               ⚖️ 填入 TDEE
             </button>
+            <button class="btn btn-secondary" onclick="showMyTDEE()">
+              📊 我的 TDEE
+            </button>
             <div class="result" id="profileResult">
               登录后点击"加载"查看信息
+            </div>
+
+            <!-- 我的计划模块 -->
+            <div id="profilePlansBlock" style="margin-top: 28px">
+              <h3 style="margin-bottom: 12px">📋 我的健康计划</h3>
+              <div id="profilePlansList">
+                <div class="desc" style="font-style: italic">
+                  登录后加载计划列表，或通过 RAG 对话生成新计划...
+                </div>
+              </div>
             </div>
           </div>
 
@@ -1515,6 +1682,34 @@
                 border-top: 1px solid var(--border);
               "
             />
+
+            <!-- 今日饮食汇总 -->
+            <h3 style="margin-bottom: 8px; font-size: 15px">📋 今日饮食汇总</h3>
+            <div style="margin-bottom: 12px">
+              <button
+                class="btn btn-secondary"
+                onclick="loadDailyDietSummary()"
+              >
+                🔄 刷新汇总
+              </button>
+              <span
+                id="summaryCalories"
+                style="
+                  margin-left: 12px;
+                  font-weight: 600;
+                  color: var(--accent);
+                "
+              ></span>
+            </div>
+            <div id="dailySummaryArea" style="margin-bottom: 16px"></div>
+
+            <hr
+              style="
+                margin: 16px 0;
+                border: none;
+                border-top: 1px solid var(--border);
+              "
+            />
             <h3 style="margin-bottom: 8px; font-size: 15px">🔍 食物搜索</h3>
             <div class="form-group">
               <input type="text" id="foodKeyword" placeholder="例如：鸡蛋" />
@@ -1522,15 +1717,19 @@
             <button class="btn btn-secondary" onclick="searchFood()">
               搜索
             </button>
-            <div class="result" id="foodResult" style="margin-top: 10px">
-              等待搜索...
-            </div>
+            <div id="foodResult" style="margin-top: 10px"></div>
           </div>
 
           <!-- 仪表盘 -->
           <div id="dashboard" class="panel">
             <h2>系统仪表盘</h2>
-            <p class="desc">实时展示系统健康状态与关键指标（仅管理员可见）</p>
+            <p class="desc">
+              实时展示系统健康状态与关键指标
+              <span
+                id="dashboardRoleHint"
+                style="color: var(--accent-primary)"
+              ></span>
+            </p>
             <div class="stats-grid">
               <div class="stat-card">
                 <div class="label">API 状态</div>
@@ -1549,6 +1748,192 @@
                 <div class="value" id="statToken">-</div>
               </div>
             </div>
+
+            <!-- 管理员专区：统计数据（仅管理员显示） -->
+            <div id="adminStatsBlock" style="display: none; margin-top: 24px">
+              <h3 style="margin-bottom: 12px; color: var(--accent-primary)">
+                📊 管理员统计
+              </h3>
+              <div class="stats-grid">
+                <div
+                  class="stat-card"
+                  style="
+                    background: linear-gradient(
+                      135deg,
+                      #6366f1 0%,
+                      #8b5cf6 100%
+                    );
+                    color: white;
+                  "
+                >
+                  <div class="label" style="color: rgba(255, 255, 255, 0.9)">
+                    总用户数
+                  </div>
+                  <div class="value" id="statTotalUsers">0</div>
+                </div>
+                <div
+                  class="stat-card"
+                  style="
+                    background: linear-gradient(
+                      135deg,
+                      #10b981 0%,
+                      #059669 100%
+                    );
+                    color: white;
+                  "
+                >
+                  <div class="label" style="color: rgba(255, 255, 255, 0.9)">
+                    普通用户
+                  </div>
+                  <div class="value" id="statUsers">0</div>
+                </div>
+                <div
+                  class="stat-card"
+                  style="
+                    background: linear-gradient(
+                      135deg,
+                      #f59e0b 0%,
+                      #d97706 100%
+                    );
+                    color: white;
+                  "
+                >
+                  <div class="label" style="color: rgba(255, 255, 255, 0.9)">
+                    专家
+                  </div>
+                  <div class="value" id="statExperts">0</div>
+                </div>
+                <div
+                  class="stat-card"
+                  style="
+                    background: linear-gradient(
+                      135deg,
+                      #ef4444 0%,
+                      #dc2626 100%
+                    );
+                    color: white;
+                  "
+                >
+                  <div class="label" style="color: rgba(255, 255, 255, 0.9)">
+                    待审批专家
+                  </div>
+                  <div class="value" id="statPending">0</div>
+                </div>
+                <div
+                  class="stat-card"
+                  style="
+                    background: linear-gradient(
+                      135deg,
+                      #3b82f6 0%,
+                      #2563eb 100%
+                    );
+                    color: white;
+                  "
+                >
+                  <div class="label" style="color: rgba(255, 255, 255, 0.9)">
+                    今日饮食记录
+                  </div>
+                  <div class="value" id="statDietToday">0</div>
+                </div>
+                <div
+                  class="stat-card"
+                  style="
+                    background: linear-gradient(
+                      135deg,
+                      #8b5cf6 0%,
+                      #7c3aed 100%
+                    );
+                    color: white;
+                  "
+                >
+                  <div class="label" style="color: rgba(255, 255, 255, 0.9)">
+                    累计饮食记录
+                  </div>
+                  <div class="value" id="statDietTotal">0</div>
+                </div>
+                <div
+                  class="stat-card"
+                  style="
+                    background: linear-gradient(
+                      135deg,
+                      #06b6d4 0%,
+                      #0891b2 100%
+                    );
+                    color: white;
+                  "
+                >
+                  <div class="label" style="color: rgba(255, 255, 255, 0.9)">
+                    24h活跃用户
+                  </div>
+                  <div class="value" id="statActive24h">0</div>
+                </div>
+                <div
+                  class="stat-card"
+                  style="
+                    background: linear-gradient(
+                      135deg,
+                      #ec4899 0%,
+                      #db2777 100%
+                    );
+                    color: white;
+                  "
+                >
+                  <div class="label" style="color: rgba(255, 255, 255, 0.9)">
+                    食物数据
+                  </div>
+                  <div class="value" id="statFoods">0</div>
+                </div>
+              </div>
+
+              <!-- 近7天趋势 -->
+              <div id="trendBlock" style="margin-top: 20px">
+                <h4 style="margin-bottom: 10px">📈 近7天饮食记录趋势</h4>
+                <div
+                  id="trendChart"
+                  style="
+                    display: flex;
+                    align-items: flex-end;
+                    gap: 8px;
+                    height: 180px;
+                    background: rgba(255, 255, 255, 0.05);
+                    padding: 16px;
+                    border-radius: 12px;
+                  "
+                ></div>
+              </div>
+
+              <!-- 专家审批 -->
+              <div id="approvalBlock" style="margin-top: 20px">
+                <div
+                  style="
+                    display: flex;
+                    justify-content: space-between;
+                    align-items: center;
+                    margin-bottom: 10px;
+                  "
+                >
+                  <h4 style="margin: 0">⏳ 待审批专家</h4>
+                  <button
+                    class="btn btn-secondary"
+                    style="padding: 6px 12px; font-size: 12px"
+                    onclick="loadAllUsers()"
+                  >
+                    👥 查看所有用户
+                  </button>
+                </div>
+                <div
+                  id="pendingList"
+                  style="
+                    background: rgba(255, 255, 255, 0.05);
+                    padding: 12px;
+                    border-radius: 12px;
+                  "
+                >
+                  暂无待审批专家
+                </div>
+              </div>
+            </div>
+
             <div class="result" id="dashboardResult">
               点击下方按钮刷新状态...
             </div>
@@ -1699,6 +2084,29 @@
         setTimeout(() => toast.classList.remove("show"), duration);
       }
 
+      function showModal(title, html) {
+        let modal = document.getElementById("globalModal");
+        if (!modal) {
+          modal = document.createElement("div");
+          modal.id = "globalModal";
+          modal.style.cssText =
+            "position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 99999; display: flex; align-items: center; justify-content: center; padding: 20px;";
+          modal.onclick = (e) => {
+            if (e.target === modal) modal.remove();
+          };
+          document.body.appendChild(modal);
+        }
+        modal.innerHTML = `
+          <div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: 16px; max-width: 800px; width: 100%; max-height: 85vh; overflow: hidden; display: flex; flex-direction: column;">
+            <div style="padding: 16px 20px; display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border);">
+              <h3 style="margin: 0;">${title}</h3>
+              <button onclick="document.getElementById('globalModal').remove()" style="background: none; border: none; color: var(--text-light); font-size: 20px; cursor: pointer;">✕</button>
+            </div>
+            <div style="padding: 20px; overflow-y: auto;">${html}</div>
+          </div>
+        `;
+      }
+
       function switchTab(tabId, btn) {
         document
           .querySelectorAll(".panel")
@@ -1707,7 +2115,10 @@
           .querySelectorAll(".nav-item")
           .forEach((t) => t.classList.remove("active"));
         document.getElementById(tabId).classList.add("active");
-        if (btn) btn.classList.add("active");
+        // 如果没有传入按钮元素，自动查找
+        const targetBtn =
+          btn || document.querySelector(`.nav-item[data-tab="${tabId}"]`);
+        if (targetBtn) targetBtn.classList.add("active");
 
         // 更新顶部导航栏
         document.getElementById("currentModule").textContent =
@@ -1716,6 +2127,10 @@
 
         if (tabId === "dashboard") refreshDashboard();
         if (tabId === "monitor") loadMetrics();
+        if (tabId === "diet") loadDailyDietSummary();
+        if (tabId === "profile") {
+          loadProfilePlans();
+        }
       }
 
       function renderTabs() {
@@ -1753,7 +2168,7 @@
         const statusEl = document.getElementById("loginStatusText");
         const roleEl = document.getElementById("loginRole");
         const userRow = document.getElementById("loginUserRow");
-        const usernameEl = document.getElementById("loginUsername");
+        const usernameEl = document.getElementById("currentUsername");
 
         if (currentUser.is_authenticated) {
           const roleLabel =
@@ -1834,8 +2249,15 @@
       function displayResult(elementId, data, isError = false) {
         const el = document.getElementById(elementId);
         el.className = "result" + (isError ? " error" : " success");
-        el.textContent =
-          typeof data === "object" ? JSON.stringify(data, null, 2) : data;
+        if (typeof data === "object" && !isError) {
+          el.textContent = JSON.stringify(data, null, 2);
+        } else if (isError && typeof data === "object" && data.detail) {
+          // 错误时显示 detail 消息，而不是 JSON
+          el.textContent = data.detail;
+        } else {
+          el.textContent =
+            typeof data === "object" ? JSON.stringify(data, null, 2) : data;
+        }
       }
 
       // ============================================================
@@ -1940,34 +2362,162 @@
 
       async function loadExistingPlans() {
         if (!token) {
-          document.getElementById("rightExistingPlans").innerHTML =
-            '<span style="color:var(--text-light);font-size:12px;">登录后加载已有计划</span>';
+          const el = document.getElementById("rightExistingPlans");
+          if (el)
+            el.innerHTML =
+              '<span style="color:var(--text-light);font-size:12px;">登录后加载已有计划</span>';
           return;
         }
-        const r = await apiCall("GET", "/api/v1/plans");
-        const el = document.getElementById("rightExistingPlans");
-        if (r.ok && r.data && r.data.plans && r.data.plans.length) {
-          el.innerHTML = r.data.plans
-            .map(
-              (p) => `
-            <div class="plan-item" onclick="loadPlanDetail(${p.id})">
-              <div style="font-weight:500;">计划 #${p.id} · ${p.goal_type}</div>
-              <div style="color:var(--text-muted);">${p.status || "active"} · ${p.created_at || ""}</div>
-            </div>
-          `,
-            )
-            .join("");
-        } else {
-          el.innerHTML =
-            '<span style="color:var(--text-light);font-size:12px;">暂无已有计划</span>';
+        try {
+          const r = await apiCall("GET", "/api/v1/plans");
+          const el = document.getElementById("rightExistingPlans");
+          const profileList = document.getElementById("profilePlansList");
+          // 后端可能同时返回 plans 和 data 字段，优先读 plans
+          const plans = (r.data && (r.data.plans || r.data.data)) || [];
+          console.log(
+            "[loadExistingPlans] plans count:",
+            plans.length,
+            "raw keys:",
+            r.data ? Object.keys(r.data) : "n/a",
+          );
+          if (r.ok && plans.length) {
+            const listHtml = plans
+              .map(
+                (p) => `
+              <div class="plan-item" onclick="loadPlanDetail(${p.id})">
+                <div style="font-weight:500;">计划 #${p.id} · ${p.goal_type}</div>
+                <div style="color:var(--text-muted);">${p.status || "active"} · ${p.created_at || ""}</div>
+              </div>
+            `,
+              )
+              .join("");
+            if (el) el.innerHTML = listHtml;
+            // 同步填充到个人中心
+            if (profileList) {
+              const goalMap = {
+                weight_loss: "减脂",
+                maintenance: "维持",
+                muscle_gain: "增肌",
+              };
+              const statusMap = {
+                active: "进行中",
+                completed: "已完成",
+                draft: "草稿",
+              };
+              profileList.innerHTML = `
+              <div style="display: flex; flex-direction: column; gap: 12px;">
+                ${plans
+                  .slice(0, 10)
+                  .map((p) => {
+                    const cfg = p.config || {};
+                    const tdee = cfg.tdee || cfg.target_calories || "-";
+                    const protein = cfg.macros
+                      ? cfg.macros.protein
+                      : cfg.protein_g || "-";
+                    return `
+                    <div style="background: var(--bg-soft); border: 1px solid var(--border); border-radius: 12px; padding: 14px;">
+                      <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+                        <div style="font-weight: 600; font-size: 15px;">
+                          📋 计划 #${p.id} · ${goalMap[p.goal_type] || p.goal_type || "通用计划"}
+                        </div>
+                        <span style="font-size: 12px; padding: 3px 10px; border-radius: 10px; background: ${p.status === "completed" ? "#10b981" : p.status === "active" ? "#6366f1" : "#64748b"}; color: white;">
+                          ${statusMap[p.status] || p.status || "active"}
+                        </span>
+                      </div>
+                      <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; margin-bottom: 10px;">
+                        <div style="background: rgba(255,255,255,0.05); padding: 8px 10px; border-radius: 8px;">
+                          <div style="color: var(--text-light); font-size: 11px;">目标热量</div>
+                          <div style="font-weight: 600;">${tdee} kcal</div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.05); padding: 8px 10px; border-radius: 8px;">
+                          <div style="color: var(--text-light); font-size: 11px;">蛋白质</div>
+                          <div style="font-weight: 600;">${protein} g</div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.05); padding: 8px 10px; border-radius: 8px;">
+                          <div style="color: var(--text-light); font-size: 11px;">创建时间</div>
+                          <div style="font-weight: 600;">${(p.created_at || "").slice(0, 10) || "-"}</div>
+                        </div>
+                        <div style="background: rgba(255,255,255,0.05); padding: 8px 10px; border-radius: 8px;">
+                          <div style="color: var(--text-light); font-size: 11px;">更新时间</div>
+                          <div style="font-weight: 600;">${(p.updated_at || "").slice(0, 10) || "-"}</div>
+                        </div>
+                      </div>
+                      <button class="btn btn-secondary" style="padding: 6px 14px; font-size: 12px;" onclick="event.stopPropagation(); loadPlanDetail(${p.id})">📖 查看详情</button>
+                    </div>
+                  `;
+                  })
+                  .join("")}
+              </div>
+            `;
+            }
+          } // ← 闭合 if (r.ok && plans.length)
+          // plans 为空的兜底清理
+          if (!plans.length && el) {
+            el.innerHTML =
+              '<span style="color:var(--text-light);font-size:12px;">暂无已有计划</span>';
+          }
+          if (!plans.length && profileList) {
+            profileList.innerHTML = `<div class="desc" style="font-style: italic;">暂无已保存的计划，前往"健康问答"模块发送"帮我生成一个减脂计划"即可智能生成</div>`;
+          }
+        } catch (e) {
+          console.error("[loadExistingPlans] 异常:", e);
+          const el = document.getElementById("rightExistingPlans");
+          if (el)
+            el.innerHTML =
+              '<span style="color:#ef4444;font-size:12px;">加载失败</span>';
         }
+      }
+
+      function loadProfilePlans() {
+        loadExistingPlans();
       }
 
       async function loadPlanDetail(planId) {
         const r = await apiCall("GET", `/api/v1/plans/${planId}`);
+        console.log(
+          "[loadPlanDetail]",
+          planId,
+          "ok:",
+          r.ok,
+          "r.data keys:",
+          r.data ? Object.keys(r.data) : "n/a",
+        );
         if (r.ok && r.data) {
-          updateRightPlan(r.data.config || r.data, planId, r.data.goal_type);
-          showToast(`已加载计划 #${planId}`);
+          // 后端返回 {"success":true, "data": {...plan对象...}} —— 注意多一层 data
+          const planObj = r.data.data || r.data;
+          console.log("[loadPlanDetail] planObj keys:", Object.keys(planObj));
+          const cfg = planObj.config || {};
+          // 🆕 过滤掉 days 里的 null 或无 meals 的坏数据
+          const rawDays = cfg.days || planObj.days || [];
+          const daysList = rawDays
+            .filter((d) => d && Array.isArray(d.meals))
+            .map((d) => ({ ...d, meals: d.meals.filter((m) => m) }));
+          console.log(
+            "[loadPlanDetail] days raw=",
+            rawDays.length,
+            "filtered=",
+            daysList.length,
+          );
+          // 1. 更新 sidebar
+          updateRightPlan(cfg, planId, planObj.goal_type);
+          // 2. 切到 AI 健康问答 tab（用项目真实的 switchTab 函数！）
+          switchTab("rag");
+          // 3. 渲染完整计划表 —— 🆕 用真实的 renderPlanAsTable 签名！
+          const messageUuid = "load-" + planId + "-" + Date.now();
+          const planHtml = renderPlanAsTable(
+            cfg, // 第1个：完整 config 对象
+            planId, // 第2个：planId 数字
+            planObj.goal_type, // 第3个：goalType
+            messageUuid, // 第4个：messageUuid
+            cfg.duration_hint || "7_days", // 第5个：planDuration
+            cfg.source_guidelines || cfg.guideline_titles || "", // 第6个
+          );
+          appendChat("bot", planHtml, { messageUuid });
+          showToast(`✅ 已加载计划 #${planId}`);
+        } else {
+          showToast(
+            `❌ 加载失败: ${(r.data && (r.data.detail || r.data.error)) || r.status || "未知"}`,
+          );
         }
       }
 
@@ -2004,17 +2554,175 @@
           currentUser.is_authenticated
             ? `🔑 ${currentUser.username}`
             : "⚠️ 游客";
+
+        // 权限控制提示
+        const roleHint = document.getElementById("dashboardRoleHint");
+        const adminBlock = document.getElementById("adminStatsBlock");
         if (currentUser.role === "admin") {
+          roleHint.textContent = "（您是管理员，可查看完整统计）";
+          adminBlock.style.display = "block";
+          // 加载管理员统计
           try {
             const stats = await apiCall("GET", "/api/v1/user/dashboard/stats");
             if (stats.ok && stats.data) {
+              renderAdminStats(stats.data);
               document.getElementById("dashboardResult").textContent =
-                `用户: ${stats.data.total_users} | 档案: ${stats.data.total_profiles} | 计划: ${stats.data.total_plans} · ${new Date().toLocaleString()}`;
+                `检测完成 · ${new Date().toLocaleString()}`;
             }
-          } catch {}
+          } catch (e) {
+            console.error("获取管理员统计失败", e);
+          }
+          // 加载待审批专家
+          loadPendingExperts();
         } else {
+          if (currentUser.is_authenticated) {
+            roleHint.textContent = `（您是${currentUser.role === "expert" ? "专家" : "普通用户"}，管理员专区需管理员权限）`;
+          }
+          adminBlock.style.display = "none";
           document.getElementById("dashboardResult").textContent =
             `检测完成 · ${new Date().toLocaleString()}`;
+        }
+      }
+
+      function renderAdminStats(data) {
+        document.getElementById("statTotalUsers").textContent =
+          data.total_users || 0;
+        const rs = data.role_stats || {};
+        document.getElementById("statUsers").textContent =
+          (rs.user && rs.user.count) || 0;
+        document.getElementById("statExperts").textContent =
+          (rs.expert && rs.expert.count) || 0;
+        document.getElementById("statPending").textContent =
+          data.pending_expert_count || 0;
+        const ds = data.diet_stats || {};
+        document.getElementById("statDietToday").textContent =
+          ds.today_logs || 0;
+        document.getElementById("statDietTotal").textContent =
+          ds.total_logs || 0;
+        document.getElementById("statActive24h").textContent =
+          data.last_24h_active_users || 0;
+        document.getElementById("statFoods").textContent =
+          data.nutrition_count || 0;
+
+        // 渲染近7天趋势（简单条形图）
+        const trend = ds.last_7_days_trend || [];
+        const chartEl = document.getElementById("trendChart");
+        const maxCnt = Math.max(...trend.map((t) => t.count || 0), 1);
+        chartEl.innerHTML = trend
+          .map((t) => {
+            const h = Math.round(((t.count || 0) / maxCnt) * 150);
+            return `
+            <div style="flex: 1; display: flex; flex-direction: column; align-items: center; gap: 6px;">
+              <div style="color: var(--text-light); font-size: 11px; font-weight: 600;">${t.count || 0}</div>
+              <div style="width: 100%; height: ${Math.max(h, 4)}px; background: linear-gradient(180deg, #6366f1 0%, #8b5cf6 100%); border-radius: 6px 6px 0 0; min-height: 4px;"></div>
+              <div style="color: var(--text-light); font-size: 10px;">${t.date.slice(5)}</div>
+            </div>
+          `;
+          })
+          .join("");
+      }
+
+      async function loadPendingExperts() {
+        try {
+          const r = await apiCall("GET", "/api/v1/user/admin/pending-experts");
+          const el = document.getElementById("pendingList");
+          if (r.ok && r.data && r.data.count > 0) {
+            el.innerHTML = r.data.pending_experts
+              .map(
+                (u) => `
+              <div style="padding: 10px; margin-bottom: 8px; background: rgba(255,255,255,0.05); border-radius: 8px; display: flex; justify-content: space-between; align-items: center;">
+                <div>
+                  <div style="font-weight: 600;">${u.username || u.email || u.external_id}</div>
+                  <div style="color: var(--text-light); font-size: 12px;">注册: ${(u.created_at || "").slice(0, 10)} · 来源: ${u.source}</div>
+                </div>
+                <div style="display: flex; gap: 8px;">
+                  <button class="btn" style="padding: 4px 10px; font-size: 12px; background: #10b981;" onclick="approveExpert(${u.id}, true)">✅ 通过</button>
+                  <button class="btn btn-secondary" style="padding: 4px 10px; font-size: 12px; background: #ef4444;" onclick="approveExpert(${u.id}, false)">❌ 拒绝</button>
+                </div>
+              </div>
+            `,
+              )
+              .join("");
+          } else {
+            el.innerHTML = "✅ 暂无待审批专家";
+          }
+        } catch (e) {
+          console.error(e);
+        }
+      }
+
+      async function approveExpert(userId, approved) {
+        const msg = approved
+          ? "确定通过该专家审批吗？"
+          : "确定拒绝该专家账号吗？";
+        if (!confirm(msg)) return;
+        try {
+          const r = await apiCall(
+            "PUT",
+            `/api/v1/user/admin/users/${userId}/approve`,
+            { approved },
+          );
+          if (r.ok) {
+            showToast(r.data.message || "操作成功");
+            refreshDashboard();
+          } else {
+            showToast(r.data.detail || "操作失败");
+          }
+        } catch (e) {
+          showToast("操作失败");
+        }
+      }
+
+      async function loadAllUsers() {
+        try {
+          const r = await apiCall("GET", "/api/v1/user/admin/users");
+          if (r.ok && r.data) {
+            const users = r.data.users || [];
+            const html = `
+              <div style="max-height: 60vh; overflow-y: auto;">
+                <h3 style="margin-bottom: 10px;">👥 所有用户 (${r.data.count})</h3>
+                <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+                  <thead>
+                    <tr style="background: rgba(99, 102, 241, 0.2);">
+                      <th style="padding: 8px; text-align: left;">ID</th>
+                      <th style="padding: 8px; text-align: left;">用户名</th>
+                      <th style="padding: 8px; text-align: left;">角色</th>
+                      <th style="padding: 8px; text-align: left;">审批</th>
+                      <th style="padding: 8px; text-align: left;">状态</th>
+                      <th style="padding: 8px; text-align: left;">注册时间</th>
+                      <th style="padding: 8px; text-align: left;">操作</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    ${users
+                      .map(
+                        (u) => `
+                      <tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                        <td style="padding: 8px;">${u.id}</td>
+                        <td style="padding: 8px;">${u.username || u.email || u.external_id}</td>
+                        <td style="padding: 8px;">
+                          <span style="padding: 2px 8px; border-radius: 10px; font-size: 11px; background: ${u.role === "admin" ? "#ef4444" : u.role === "expert" ? "#f59e0b" : "#10b981"};">
+                            ${u.role === "admin" ? "管理员" : u.role === "expert" ? "专家" : "普通用户"}
+                          </span>
+                        </td>
+                        <td style="padding: 8px;">${u.role === "expert" ? (u.approved ? "✅ 通过" : "⏳ 待审批") : "—"}</td>
+                        <td style="padding: 8px;">${u.is_active ? "✅ 活跃" : "❌ 禁用"}</td>
+                        <td style="padding: 8px;">${(u.created_at || "").slice(0, 10)}</td>
+                        <td style="padding: 8px;">
+                          ${u.role === "expert" && !u.approved ? `<button class="btn" style="padding: 3px 8px; font-size: 11px;" onclick="approveExpert(${u.id}, true)">通过</button>` : ""}
+                        </td>
+                      </tr>
+                    `,
+                      )
+                      .join("")}
+                  </tbody>
+                </table>
+              </div>
+            `;
+            showModal("用户列表", html);
+          }
+        } catch (e) {
+          showToast("加载用户列表失败");
         }
       }
 
@@ -2034,7 +2742,24 @@
         document
           .querySelectorAll("#authSubTabs .sub-tab")
           .forEach((b) => b.classList.remove("active"));
-        if (ev) ev.target.classList.add("active");
+        if (ev && ev.target) {
+          ev.target.classList.add("active");
+        } else {
+          // 如果没有事件对象，直接找到对应的标签按钮并激活
+          // 顺序: login=0, register=1, emailReg=2, changePwd=3, forgot=4
+          const tabIndex = {
+            login: 0,
+            register: 1,
+            emailReg: 2,
+            changePwd: 3,
+            forgot: 4,
+          };
+          const buttons = document.querySelectorAll("#authSubTabs .sub-tab");
+          const idx = tabIndex[tab];
+          if (idx !== undefined && buttons[idx]) {
+            buttons[idx].classList.add("active");
+          }
+        }
       }
 
       async function authLogin() {
@@ -2058,10 +2783,18 @@
           showToast("登录成功！");
           await checkIdentity();
           loadExistingPlans();
+          // 显示友好的登录成功信息，而不是 token JSON
+          const el = document.getElementById("authResult");
+          el.className = "result success";
+          el.innerHTML = `✅ 登录成功！欢迎回来，<strong>${username}</strong>`;
+          // 登录成功后延迟跳转到 AI 健康问答界面
+          setTimeout(() => {
+            switchTab("rag");
+          }, 800);
         } else {
           showToast(r.data?.detail || `登录失败：${r.status}`);
+          displayResult("authResult", r.data, !r.ok);
         }
-        displayResult("authResult", r.data, !r.ok);
       }
 
       async function authRefresh() {
@@ -2094,19 +2827,37 @@
         const password = document.getElementById("regPassword").value;
         const question = document.getElementById("regQuestion").value.trim();
         const answer = document.getElementById("regAnswer").value.trim();
+        const role = document.getElementById("regRole").value;
         if (!username || !password) {
           showToast("请填写用户名和密码");
           return;
         }
-        const body = { username, password };
+        const body = { username, password, role };
         if (question && answer) {
           body.security_question = question;
           body.security_answer = answer;
         }
         const r = await apiCall("POST", "/api/v1/auth/register", body, false);
-        if (r.ok) showToast("注册成功！现在可以登录");
-        else showToast(r.data?.detail || `注册失败：${r.status}`);
-        displayResult("authResult", r.data, !r.ok);
+        if (r.ok) {
+          const needApproval = r.data?.need_approval;
+          if (needApproval) {
+            showToast("专家注册成功，请等待管理员审批");
+            const el = document.getElementById("authResult");
+            el.className = "result success";
+            el.innerHTML = `✅ 注册成功！<strong>专家账号</strong> <strong>${username}</strong> 已创建，需管理员审批通过后方可登录`;
+          } else {
+            showToast("注册成功！现在可以登录");
+            const el = document.getElementById("authResult");
+            el.className = "result success";
+            el.innerHTML = `✅ 注册成功！账号 <strong>${username}</strong> 已创建，请前往登录`;
+            setTimeout(() => {
+              switchAuthTab("login");
+            }, 800);
+          }
+        } else {
+          showToast(r.data?.detail || `注册失败：${r.status}`);
+          displayResult("authResult", r.data, !r.ok);
+        }
       }
 
       async function sendCode() {
@@ -2134,11 +2885,12 @@
           .getElementById("emailRegQuestion")
           .value.trim();
         const answer = document.getElementById("emailRegAnswer").value.trim();
+        const role = document.getElementById("emailRegRole").value;
         if (!email || !password || !code) {
           showToast("请填写邮箱、密码和验证码");
           return;
         }
-        const body = { email, password, code };
+        const body = { email, password, code, role };
         if (question && answer) {
           body.security_question = question;
           body.security_answer = answer;
@@ -2149,9 +2901,24 @@
           body,
           false,
         );
-        if (r.ok) showToast("注册成功！现在可以登录");
-        else showToast(r.data?.detail || `注册失败：${r.status}`);
-        displayResult("authResult", r.data, !r.ok);
+        if (r.ok) {
+          const needApproval = r.data?.need_approval;
+          if (needApproval) {
+            showToast("专家注册成功，请等待管理员审批");
+            displayResult(
+              "authResult",
+              { message: "专家账号注册成功，请等待管理员审批后方可登录" },
+              false,
+            );
+          } else {
+            showToast("注册成功！现在可以登录");
+            setTimeout(() => switchAuthTab("login"), 800);
+            displayResult("authResult", r.data, false);
+          }
+        } else {
+          showToast(r.data?.detail || `注册失败：${r.status}`);
+          displayResult("authResult", r.data, !r.ok);
+        }
       }
 
       async function changePassword() {
@@ -2247,8 +3014,13 @@
           document.getElementById("pfSports").value = d.sports_hobby || "";
           document.getElementById("pfGoal").value = d.health_goal || "";
           document.getElementById("pfAllergies").value = d.allergies || "";
-          displayResult("profileResult", d, false);
-        } else displayResult("profileResult", r.data, true);
+          showToast("加载成功！");
+          displayResult("profileResult", "加载成功，档案信息已填入表单", false);
+        } else {
+          let err = r.data?.detail || "加载失败";
+          if (typeof r.data === "string") err = r.data;
+          displayResult("profileResult", err, true);
+        }
       }
 
       async function saveProfile() {
@@ -2282,7 +3054,14 @@
               : v;
         }
         const r = await apiCall("PUT", "/api/v1/user/profile", body);
-        displayResult("profileResult", r.data, !r.ok);
+        if (r.ok) {
+          showToast("保存成功！");
+          displayResult("profileResult", "保存成功，档案已更新", false);
+        } else {
+          let err = r.data?.detail || "保存失败";
+          if (typeof r.data === "string") err = r.data;
+          displayResult("profileResult", err, true);
+        }
       }
 
       function fillTDEEFromProfile() {
@@ -2303,6 +3082,153 @@
       // ============================================================
       // TDEE 计算
       // ============================================================
+
+      const goalTypeLabels = {
+        weight_loss: "减脂",
+        muscle_gain: "增肌",
+        maintenance: "维持",
+      };
+      const activityLevelLabels = {
+        sedentary: "久坐（办公室）",
+        light: "轻度活动",
+        moderate: "中度活动",
+        active: "高度活动",
+        very_active: "极高活动",
+      };
+
+      function displayTDEEResult(data) {
+        const el = document.getElementById("tdeeResult");
+        el.className = "result tdee-result";
+
+        if (!data || data.bmr === undefined) {
+          el.innerHTML =
+            '<span style="color:#94a3b8;">计算失败，请检查参数</span>';
+          return;
+        }
+
+        const bmr = data.bmr?.toFixed(0) || "?";
+        const tdee = data.tdee?.toFixed(0) || "?";
+        const target = data.target_calories?.toFixed(0) || "?";
+        const proteinG = data.macros?.protein_g?.toFixed(1) || "?";
+        const fatG = data.macros?.fat_g?.toFixed(1) || "?";
+        const carbsG = data.macros?.carbs_g?.toFixed(1) || "?";
+        const bmi = data.bmi?.toFixed(1) || "?";
+        const ratio = data.activity_factor?.toFixed(2) || "1.00";
+        const advices = Array.isArray(data.advice)
+          ? data.advice
+          : data.advice
+            ? [data.advice]
+            : [];
+        const warning = data.safety_warning || data.safety_note || null;
+        const profileSource = data.profile_source || {};
+
+        const goalLabel =
+          goalTypeLabels[data.goal_type] || data.goal_type || "维持";
+        const activityLabel =
+          activityLevelLabels[data.activity_level] ||
+          data.activity_level ||
+          "-";
+
+        let html = `
+          <div class="tdee-cards">
+            <div class="tdee-card">
+              <div class="tdee-card-label">BMR 基础代谢</div>
+              <div class="tdee-card-value">${bmr}<span class="tdee-card-unit">kcal</span></div>
+            </div>
+            <div class="tdee-card">
+              <div class="tdee-card-label">TDEE 每日消耗</div>
+              <div class="tdee-card-value">${tdee}<span class="tdee-card-unit">kcal</span></div>
+            </div>
+            <div class="tdee-card target">
+              <div class="tdee-card-label">🎯 目标摄入</div>
+              <div class="tdee-card-value">${target}<span class="tdee-card-unit">kcal</span></div>
+            </div>
+          </div>
+
+          <div class="tdee-section-title">📊 宏量营养素分配（每日）</div>
+          <table class="tdee-table">
+            <thead>
+              <tr>
+                <th>营养素</th>
+                <th>数量 (g)</th>
+                <th>热量占比</th>
+                <th>说明</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>🥩 蛋白质</td>
+                <td class="num">${proteinG} g</td>
+                <td class="num">${((data.macros_ratios?.protein || 0) * 100).toFixed(0)}%</td>
+                <td>肌肉修复、免疫支持</td>
+              </tr>
+              <tr>
+                <td>🥑 脂肪</td>
+                <td class="num">${fatG} g</td>
+                <td class="num">${((data.macros_ratios?.fat || 0) * 100).toFixed(0)}%</td>
+                <td>激素合成、脂溶性维生素</td>
+              </tr>
+              <tr>
+                <td>🍚 碳水化合物</td>
+                <td class="num">${carbsG} g</td>
+                <td class="num">${((data.macros_ratios?.carbs || 0) * 100).toFixed(0)}%</td>
+                <td>主要能量来源</td>
+              </tr>
+            </tbody>
+          </table>
+
+          <div class="tdee-section-title">📋 计算参数</div>
+          <table class="tdee-table">
+            <thead>
+              <tr>
+                <th>参数</th>
+                <th>值</th>
+                <th>参数</th>
+                <th>值</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td>体重</td>
+                <td class="num">${profileSource.weight_kg || "-"} kg</td>
+                <td>身高</td>
+                <td class="num">${profileSource.height_cm || "-"} cm</td>
+              </tr>
+              <tr>
+                <td>年龄</td>
+                <td class="num">${profileSource.age || "-"} 岁</td>
+                <td>性别</td>
+                <td>${profileSource.gender === "female" ? "女" : "男"}</td>
+              </tr>
+              <tr>
+                <td>活动水平</td>
+                <td>${activityLabel} (×${ratio})</td>
+                <td>BMI</td>
+                <td class="num">${bmi} ${bmi >= 24 ? "⚠️" : bmi < 18.5 ? "⚠️" : "✅"}</td>
+              </tr>
+              <tr>
+                <td>目标</td>
+                <td colspan="3">${goalLabel}</td>
+              </tr>
+            </tbody>
+          </table>
+        `;
+
+        if (warning) {
+          html += `<div class="tdee-warn">⚠️ ${warning}</div>`;
+        }
+
+        if (advices.length > 0) {
+          html += `<div class="tdee-advice">💡 ${advices.join(" ")}</div>`;
+        }
+
+        if (data.guest_mode) {
+          html += `<div class="tdee-meta">游客模式 · 未登录</div>`;
+        }
+
+        el.innerHTML = html;
+      }
+
       async function calculateTDEE() {
         const body = {
           weight_kg: parseFloat(document.getElementById("tdeeWeight").value),
@@ -2313,27 +3239,204 @@
           goal_type: document.getElementById("tdeeGoal").value,
         };
         const btn = event.target;
+        const el = document.getElementById("tdeeResult");
         btn.disabled = true;
         btn.innerHTML = '<span class="loading"></span>计算中...';
+        try {
+          // 登录用户默认 save_to_profile=None（后端决定首次自动保存，已有则不自动保存）
+          // 游客不传 save_to_profile
+          if (token) {
+            body.save_to_profile = null;
+          }
+          const r = await apiCall("POST", "/api/v1/user/tdee", body);
+          btn.disabled = false;
+          btn.innerHTML = "🧮 计算 TDEE";
+          if (
+            r.ok &&
+            r.data &&
+            typeof r.data === "object" &&
+            r.data.bmr !== undefined
+          ) {
+            displayTDEEResult(r.data);
+
+            // TDEE 保存逻辑
+            if (token && r.data.tdee_saved !== undefined) {
+              if (r.data.tdee_saved && r.data.tdee_is_first_save) {
+                showToast("TDEE 已自动保存至个人中心");
+              } else if (!r.data.tdee_saved && r.data.tdee_existing) {
+                // 已有TDEE，询问用户是否覆盖
+                setTimeout(() => {
+                  if (
+                    confirm(
+                      "检测到您已有保存的TDEE数据，是否用本次计算结果覆盖？（如为他人计算，请选择取消）",
+                    )
+                  ) {
+                    saveTDEEToProfile(body);
+                  }
+                }, 500);
+              }
+            }
+          } else {
+            el.className = "result error";
+            let errorMsg = "计算失败";
+            if (r.data) {
+              if (typeof r.data === "string") {
+                errorMsg = r.data;
+              } else if (r.data.detail) {
+                errorMsg =
+                  typeof r.data.detail === "string"
+                    ? r.data.detail
+                    : JSON.stringify(r.data.detail);
+              }
+            }
+            el.textContent = errorMsg;
+          }
+        } catch (e) {
+          btn.disabled = false;
+          btn.innerHTML = "🧮 计算 TDEE";
+          el.className = "result error";
+          el.textContent = "请求失败: " + e.message;
+        }
+      }
+
+      async function saveTDEEToProfile(calcBody) {
+        // 强制保存TDEE到档案
+        const body = { ...calcBody, save_to_profile: true };
         const r = await apiCall("POST", "/api/v1/user/tdee", body);
-        btn.disabled = false;
-        btn.innerHTML = "🧮 计算 TDEE";
-        displayResult("tdeeResult", r.data, !r.ok);
+        if (r.ok && r.data?.tdee_saved) {
+          showToast("TDEE 已保存至个人中心");
+        } else {
+          showToast("保存失败，请重试");
+        }
+      }
+
+      async function showMyTDEE() {
+        if (!token) {
+          showToast("请先登录");
+          return;
+        }
+        const r = await apiCall("GET", "/api/v1/user/tdee/saved");
+        const el = document.getElementById("profileResult");
+        if (r.ok && r.data?.has_saved_tdee && r.data?.tdee_result) {
+          const t = r.data.tdee_result;
+          const goalLabel =
+            goalTypeLabels[t.goal_type] || t.goal_type || "维持";
+          const activityLabel =
+            activityLevelLabels[t.activity_level] || t.activity_level || "-";
+          const savedDate = t.saved_at
+            ? new Date(t.saved_at).toLocaleString("zh-CN")
+            : "-";
+          el.className = "result";
+          el.style.maxHeight = "none";
+          el.innerHTML = `
+            <div style="background: var(--bg-soft); border: 1px solid var(--border); border-radius: 12px; padding: 16px;">
+              <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+                <div style="font-weight: 700; font-size: 14px; color: var(--accent-primary);">⚖️ 我的 TDEE 数据</div>
+                <span style="font-size: 11px; color: var(--text-light);">保存于 ${savedDate}</span>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px; margin-bottom: 12px;">
+                <div style="background: rgba(99, 102, 241, 0.15); padding: 12px; border-radius: 8px; text-align: center;">
+                  <div style="color: var(--text-light); font-size: 11px;">BMR 基础代谢</div>
+                  <div style="font-size: 20px; font-weight: 700; color: var(--accent-primary);">${t.bmr?.toFixed(0) || "?"}<span style="font-size: 12px; font-weight: 400;"> kcal</span></div>
+                </div>
+                <div style="background: rgba(16, 185, 129, 0.15); padding: 12px; border-radius: 8px; text-align: center;">
+                  <div style="color: var(--text-light); font-size: 11px;">TDEE 每日消耗</div>
+                  <div style="font-size: 20px; font-weight: 700; color: #10b981;">${t.tdee?.toFixed(0) || "?"}<span style="font-size: 12px; font-weight: 400;"> kcal</span></div>
+                </div>
+                <div style="background: rgba(245, 158, 11, 0.15); padding: 12px; border-radius: 8px; text-align: center;">
+                  <div style="color: var(--text-light); font-size: 11px;">🎯 目标摄入</div>
+                  <div style="font-size: 20px; font-weight: 700; color: #f59e0b;">${t.target_calories?.toFixed(0) || "?"}<span style="font-size: 12px; font-weight: 400;"> kcal</span></div>
+                </div>
+              </div>
+              <div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 10px;">
+                <div style="background: rgba(255,255,255,0.05); padding: 8px 10px; border-radius: 8px;">
+                  <div style="color: var(--text-light); font-size: 11px;">🥩 蛋白质</div>
+                  <div style="font-weight: 600;">${t.macros?.protein_g?.toFixed(1) || "?"} g</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.05); padding: 8px 10px; border-radius: 8px;">
+                  <div style="color: var(--text-light); font-size: 11px;">🥑 脂肪</div>
+                  <div style="font-weight: 600;">${t.macros?.fat_g?.toFixed(1) || "?"} g</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.05); padding: 8px 10px; border-radius: 8px;">
+                  <div style="color: var(--text-light); font-size: 11px;">🍚 碳水</div>
+                  <div style="font-weight: 600;">${t.macros?.carbs_g?.toFixed(1) || "?"} g</div>
+                </div>
+                <div style="background: rgba(255,255,255,0.05); padding: 8px 10px; border-radius: 8px;">
+                  <div style="color: var(--text-light); font-size: 11px;">📊 BMI</div>
+                  <div style="font-weight: 600;">${t.bmi?.toFixed(1) || "?"}</div>
+                </div>
+              </div>
+              <div style="display: flex; justify-content: space-between; align-items: center; font-size: 12px; color: var(--text-light);">
+                <span>目标: ${goalLabel}</span>
+                <span>活动量: ${activityLabel}</span>
+                <button class="btn btn-secondary" style="padding: 4px 12px; font-size: 12px;" onclick="fillTDEEFromProfile()">填入计算器</button>
+              </div>
+            </div>
+          `;
+          showToast("已加载 TDEE 数据");
+        } else {
+          el.className = "result";
+          el.innerHTML =
+            '<div class="desc" style="font-style: italic; color: var(--text-muted);">暂未保存TDEE数据，请前往「TDEE计算器」计算后自动保存</div>';
+        }
       }
 
       // ============================================================
       // RAG 问答
       // ============================================================
-      function appendChat(role, text) {
+      function appendChat(role, text, extra = {}) {
         const box = document.getElementById("chatBox");
         const msg = document.createElement("div");
         msg.className = `chat-msg ${role}`;
-        msg.innerHTML = `<div class="role">${role === "user" ? "你" : "AI 助手"}</div>${text}`;
+        let html = `<div class="role">${role === "user" ? "你" : "AI 助手"}</div>${text}`;
+
+        // bot 消息添加反馈按钮（点/踩）
+        if (role === "bot" && extra.messageUuid) {
+          const uuid = extra.messageUuid;
+          html += `
+            <div class="chat-feedback" style="margin-top: 8px; display: flex; gap: 8px; align-items: center;">
+              <span style="color: var(--text-light); font-size: 12px;">这条回答对您有帮助吗？</span>
+              <button class="btn btn-secondary feedback-btn" style="padding: 3px 10px; font-size: 12px;" data-uuid="${uuid}" data-action="like" onclick="submitChatFeedback('${uuid}', 'like', this)">👍</button>
+              <button class="btn btn-secondary feedback-btn" style="padding: 3px 10px; font-size: 12px;" data-uuid="${uuid}" data-action="dislike" onclick="submitChatFeedback('${uuid}', 'dislike', this)">👎</button>
+            </div>
+          `;
+        }
+        msg.innerHTML = html;
         box.appendChild(msg);
         box.scrollTop = box.scrollHeight;
       }
 
-      async function sendRAGQuery() {
+      async function submitChatFeedback(messageUuid, action, btn) {
+        if (!token) {
+          showToast("请先登录后再反馈");
+          return;
+        }
+        try {
+          const r = await apiCall("POST", "/api/v1/feedback/answer", {
+            message_uuid: messageUuid,
+            action: action,
+          });
+          if (r.ok) {
+            showToast(
+              action === "like" ? "感谢您的肯定！" : "感谢反馈，我们会持续改进",
+            );
+            // 标记按钮状态
+            const container = btn.parentElement;
+            container.querySelectorAll(".feedback-btn").forEach((b) => {
+              b.style.background = "";
+              b.style.opacity = "0.6";
+            });
+            btn.style.background = action === "like" ? "#10b981" : "#ef4444";
+            btn.style.opacity = "1";
+          } else {
+            showToast(r.data?.detail || "反馈失败");
+          }
+        } catch (e) {
+          showToast("反馈失败");
+        }
+      }
+
+      async function sendRAGQuery(forcePlanDuration) {
         const query = document.getElementById("ragQuery").value.trim();
         if (!query) return;
         appendChat("user", query);
@@ -2345,14 +3448,50 @@
         // 将当前用户输入加入上下文
         contextForApi.push({ role: "user", content: query });
 
-        const r = await apiCall("POST", "/api/v1/rag/query", {
+        const body = {
           query,
           conversation_context: contextForApi,
-        });
+        };
+        if (forcePlanDuration) {
+          body.plan_duration = forcePlanDuration;
+        }
+
+        const r = await apiCall("POST", "/api/v1/rag/query", body);
         const box = document.getElementById("chatBox");
         box.lastChild.remove();
         if (r.ok && r.data.answer) {
-          appendChat("bot", r.data.answer);
+          const messageUuid = r.data.message_uuid || "";
+
+          // 如果有计划配置，用表格形式渲染
+          if (
+            r.data.plan_config &&
+            Object.keys(r.data.plan_config).length > 0
+          ) {
+            // 全局缓存（给手动保存按钮用）
+            lastPlan = {
+              config: r.data.plan_config,
+              plan_id: r.data.plan_id,
+              goal_type: r.data.goal_type || "health_maintenance",
+              plan_duration:
+                r.data.plan_duration ||
+                r.data.plan_config?.duration_hint ||
+                "1_day",
+              time: new Date().toLocaleString(),
+            };
+            const planHtml = renderPlanAsTable(
+              r.data.plan_config,
+              r.data.plan_id,
+              r.data.goal_type,
+              messageUuid,
+              r.data.plan_duration ||
+                r.data.plan_config?.duration_hint ||
+                "1_day",
+            );
+            appendChat("bot", planHtml, { messageUuid });
+          } else {
+            appendChat("bot", r.data.answer, { messageUuid });
+          }
+
           // 更新右侧栏溯源信息
           updateRightSources(r.data.sources || [], r.data.answer_source);
           // 更新问答历史
@@ -2371,8 +3510,400 @@
             content: r.data.answer,
           });
         } else {
-          appendChat("bot", `❌ 查询失败：${JSON.stringify(r.data)}`);
+          let errMsg = "查询失败，请稍后重试";
+          if (r.data && r.data.detail) errMsg = r.data.detail;
+          else if (r.data && typeof r.data === "string") errMsg = r.data;
+          else if (r.status === 500) errMsg = "服务内部错误，请稍后重试";
+          else if (r.status === 429) errMsg = "请求过于频繁，请稍后再试";
+          appendChat("bot", `❌ 查询失败：${errMsg}`);
         }
+      }
+
+      function renderPlanAsTable(
+        planConfig,
+        planId,
+        goalType,
+        messageUuid,
+        planDuration,
+      ) {
+        const c = planConfig;
+        planDuration =
+          planDuration ||
+          c.duration_hint ||
+          (c.days && c.days.length >= 7 ? "7_days" : "1_day");
+        const goalLabels = {
+          weight_loss: "减脂",
+          maintenance: "维持",
+          muscle_gain: "增肌",
+        };
+        const goalLabel = goalLabels[goalType] || goalType || "通用";
+        const durLabels = {
+          "1_day": "1天示范",
+          "7_days": "完整7天",
+          "30_days": "月度框架",
+        };
+        const durLabel = durLabels[planDuration] || planDuration;
+
+        let html = `<div class="plan-table-container" style="background: var(--bg-soft); border: 1px solid var(--border); border-radius: 12px; padding: 16px; margin-bottom: 12px;">`;
+
+        // 头部
+        html += `<div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
+          <div style="font-size: 15px; font-weight: 700; color: var(--accent-primary);">🎯 饮食计划 #${planId || "?"} · ${goalLabel} · ${durLabel}</div>`;
+        if (c.summary) {
+          html += `<div style="font-size: 12px; color: var(--text-light); max-width: 60%;">${c.summary}</div>`;
+        }
+        html += `</div>`;
+
+        // 目标热量 + 宏量营养素卡片
+        const macros = c.macros || {};
+        html += `<div style="display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 14px;">
+          <div style="background: rgba(99, 102, 241, 0.15); padding: 10px; border-radius: 8px; text-align: center;">
+            <div style="color: var(--text-light); font-size: 11px;">目标热量</div>
+            <div style="font-size: 16px; font-weight: 700;">${c.target_calories || "?"} kcal</div>
+          </div>
+          <div style="background: rgba(16, 185, 129, 0.15); padding: 10px; border-radius: 8px; text-align: center;">
+            <div style="color: var(--text-light); font-size: 11px;">蛋白质</div>
+            <div style="font-size: 16px; font-weight: 700;">${macros.protein_g || "?"} g</div>
+          </div>
+          <div style="background: rgba(245, 158, 11, 0.15); padding: 10px; border-radius: 8px; text-align: center;">
+            <div style="color: var(--text-light); font-size: 11px;">脂肪</div>
+            <div style="font-size: 16px; font-weight: 700;">${macros.fat_g || "?"} g</div>
+          </div>
+          <div style="background: rgba(59, 130, 246, 0.15); padding: 10px; border-radius: 8px; text-align: center;">
+            <div style="color: var(--text-light); font-size: 11px;">碳水</div>
+            <div style="font-size: 16px; font-weight: 700;">${macros.carbs_g || "?"} g</div>
+          </div>
+        </div>`;
+
+        // 餐次表格 - 支持周计划(days)和单日计划(meals)
+        const days = c.days || [];
+        const mealLabels = {
+          breakfast: "早餐",
+          lunch: "午餐",
+          dinner: "晚餐",
+          snack: "加餐",
+        };
+
+        function renderMealTable(meals, tableId) {
+          let h = `<div style="overflow-x: auto; border: 1px solid var(--border); border-radius: 8px; margin-bottom: 12px;">
+            <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+              <thead>
+                <tr style="background: rgba(99, 102, 241, 0.2);">
+                  <th style="padding: 8px; text-align: left;">餐次</th>
+                  <th style="padding: 8px; text-align: left;">时间</th>
+                  <th style="padding: 8px; text-align: left;">食物</th>
+                  <th style="padding: 8px; text-align: center;">份量</th>
+                  <th style="padding: 8px; text-align: center;">热量</th>
+                  <th style="padding: 8px; text-align: left;">烹饪方式</th>
+                </tr>
+              </thead>
+              <tbody>`;
+          for (const meal of meals) {
+            if (!meal) continue; // 🆕 跳过 null
+            const mealType = mealLabels[meal.meal_type] || meal.meal_type || "";
+            const items = meal.items || [];
+            const rowspan = items.length || 1;
+            h += `<tr style="border-top: 1px solid var(--border);">
+              <td style="padding: 8px; font-weight: 600;" rowspan="${rowspan}">${mealType}</td>
+              <td style="padding: 8px;" rowspan="${rowspan}">${meal.time || "-"}</td>`;
+            if (items.length === 0) {
+              h += `<td style="padding: 8px;" colspan="4">暂无食物</td></tr>`;
+            } else {
+              const first = items[0];
+              h += `<td style="padding: 8px;">${first.food || "?"}</td>
+                <td style="padding: 8px; text-align: center;">${first.quantity || "-"}</td>
+                <td style="padding: 8px; text-align: center;">${first.calories || "?"} kcal</td>
+                <td style="padding: 8px;">${first.cooking_method || "-"}</td>
+              </tr>`;
+              for (let i = 1; i < items.length; i++) {
+                const item = items[i];
+                h += `<tr style="border-top: 1px solid var(--border);">
+                  <td style="padding: 8px;">${item.food || "?"}</td>
+                  <td style="padding: 8px; text-align: center;">${item.quantity || "-"}</td>
+                  <td style="padding: 8px; text-align: center;">${item.calories || "?"} kcal</td>
+                  <td style="padding: 8px;">${item.cooking_method || "-"}</td>
+                </tr>`;
+              }
+            }
+            if (meal.total_calories) {
+              h += `<tr style="border-top: 1px solid var(--border); background: rgba(255,255,255,0.03);">
+                <td style="padding: 6px 8px; font-size: 12px; color: var(--text-light);" colspan="4">${mealType}小计</td>
+                <td style="padding: 6px 8px; text-align: center; font-weight: 600;">${meal.total_calories} kcal</td>
+                <td></td>
+              </tr>`;
+            }
+          }
+          h += `</tbody></table></div>`;
+          return h;
+        }
+
+        if (days.length > 0) {
+          // 周计划：按天展示，每天一个可折叠区块
+          for (const day of days) {
+            if (!day) continue; // 🆕 跳过 null
+            const dayLabel = day.day_label || `第${day.day || "?"}天`;
+            const dayMeals = day.meals || [];
+            const dayTotal = dayMeals.reduce(
+              (s, m) => s + (m ? m.total_calories || 0 : 0),
+              0,
+            );
+            html += `<details style="margin-bottom: 8px;" ${day.day === 1 ? "open" : ""}>
+              <summary style="cursor: pointer; padding: 8px 12px; background: rgba(99, 102, 241, 0.1); border-radius: 6px; font-weight: 600; font-size: 13px;">
+                📅 ${dayLabel}（合计约 ${dayTotal} kcal）
+              </summary>
+              <div style="padding-top: 8px;">
+                ${renderMealTable(dayMeals)}
+              </div>
+            </details>`;
+          }
+        } else {
+          // 兼容旧的单日计划
+          const meals = c.meals || [];
+          if (meals.length > 0) {
+            html += renderMealTable(meals);
+          }
+        }
+
+        // 🆕 月度换菜池（food_swap_pool）—— 在参考指南之前渲染
+        const swapPool = c.food_swap_pool;
+        if (
+          swapPool &&
+          typeof swapPool === "object" &&
+          Object.keys(swapPool).length > 0
+        ) {
+          html += `<div style="margin: 14px 0 10px 0; padding: 14px; background: linear-gradient(135deg, rgba(245,158,11,0.12), rgba(239,68,68,0.08)); border: 1px solid #f59e0b; border-radius: 10px;">
+            <div style="font-weight: 700; font-size: 14px; margin-bottom: 10px; display: flex; align-items: center; gap: 6px;">🔄 可置换食物池 <span style="font-size: 11px; color: var(--text-light); font-weight: 400;">（每周替换 1-2 种食材，4 周不重样）</span></div>
+            <div style="display: grid; grid-template-columns: repeat(2, 1fr); gap: 10px;">`;
+          const labelMap = {
+            主食替代: "🌾 主食",
+            优质蛋白替代: "🥚 优质蛋白",
+            蔬菜替代: "🥦 蔬菜",
+            水果替代: "🍎 水果",
+            健康脂肪替代: "🥑 健康脂肪",
+            低卡饮品: "🥤 低卡饮品",
+          };
+          for (const [cat, items] of Object.entries(swapPool)) {
+            if (!Array.isArray(items)) continue;
+            const label = labelMap[cat] || cat;
+            const shown = items.slice(0, 8);
+            html += `<div style="background: rgba(255,255,255,0.05); padding: 8px 10px; border-radius: 6px;">
+              <div style="font-size: 12px; font-weight: 600; color: #f59e0b; margin-bottom: 4px;">${label}</div>
+              <div style="font-size: 12px; color: var(--text-secondary); line-height: 1.6;">${shown.map((i) => `<span style="display:inline-block; background:rgba(255,255,255,0.08); padding:1px 7px; margin:2px 3px 2px 0; border-radius:10px;">${i}</span>`).join("")}</div>
+            </div>`;
+          }
+          html += `</div>
+            <div style="margin-top: 8px; font-size: 11px; color: var(--text-light);">💡 用法示例：周一鸡胸肉 → 周二换清蒸鲈鱼，周三换虾仁，周四换瘦牛肉...</div>
+          </div>`;
+        }
+
+        // 参考指南
+        const sourceGuidelines = c.source_guidelines || [];
+        if (sourceGuidelines.length > 0) {
+          html += `<div style="font-size: 12px; color: var(--text-light); margin-bottom: 8px;">📖 参考指南: ${sourceGuidelines.join("、")}</div>`;
+        }
+
+        // 🆕 额外证据总结段落（指南之外的视频/GI数据/专家文章）
+        const evidenceSummary =
+          c.evidence_summary || c.additional_insights || c.video_insights;
+        if (
+          evidenceSummary &&
+          typeof evidenceSummary === "string" &&
+          evidenceSummary.trim()
+        ) {
+          html += `<div style="margin: 12px 0 10px 0; padding: 12px 14px; background: linear-gradient(135deg, rgba(16,185,129,0.08), rgba(99,102,241,0.06)); border: 1px solid rgba(16,185,129,0.3); border-radius: 10px;">
+            <div style="font-weight: 700; font-size: 13px; margin-bottom: 6px; color: #059669;">🔬 指南之外的实证建议</div>
+            <div style="font-size: 13px; color: var(--text-secondary); line-height: 1.7;">${evidenceSummary}</div>
+          </div>`;
+        }
+
+        // 🆕 sources 卡片（含 expert_media 视频、GI 数据等非指南来源）
+        const planSources = c.sources || [];
+        if (planSources.length > 0) {
+          const typeIcons = {
+            guideline: "📄",
+            expert_media: "🎬",
+            gi_data: "📊",
+            new_food: "🥗",
+          };
+          const typeLabels = {
+            guideline: "食养指南",
+            expert_media: "专家视频",
+            gi_data: "GI 数据",
+            new_food: "食物库",
+          };
+          html += `<div style="margin: 8px 0; display: flex; flex-wrap: wrap; gap: 6px;">`;
+          planSources.slice(0, 8).forEach((s) => {
+            const icon = typeIcons[s.source_type] || "📚";
+            const label = typeLabels[s.source_type] || s.source_type || "资料";
+            const name = (s.file_name || s.title || s.name || "未知")
+              .replace(/\.pdf$/i, "")
+              .slice(0, 28);
+            html += `<span style="display: inline-flex; align-items: center; gap: 4px; padding: 3px 9px; background: rgba(99,102,241,0.08); border: 1px solid rgba(99,102,241,0.2); border-radius: 14px; font-size: 11px; color: var(--text-secondary);">
+              ${icon} ${name} <span style="color: var(--text-light); opacity: 0.6;">· ${label}</span>
+            </span>`;
+          });
+          html += `</div>`;
+        }
+
+        // 建议和注意事项
+        if (c.advice) {
+          html += `<div style="font-size: 12px; color: #10b981; margin-bottom: 6px;">💡 建议: ${c.advice}</div>`;
+        }
+        if (c.precautions) {
+          html += `<div style="font-size: 12px; color: #f59e0b; margin-bottom: 8px;">⚠️ 注意: ${c.precautions}</div>`;
+        }
+
+        // 操作按钮
+        const hasPlanId = planId && planId > 0;
+        const savedText = hasPlanId
+          ? "✅ 计划已保存，可在「个人中心 > 我的计划」查看"
+          : "⚠️ 计划未保存（需登录后生成才能保存）";
+        html += `<div style="display: flex; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); flex-wrap: wrap; align-items: center;">
+          <button class="btn" style="background: ${hasPlanId ? "#10b981" : "#6b7280"}; padding: 8px 18px;" ${hasPlanId ? "" : "disabled"} onclick="usePlan(${planId || 0}, '${messageUuid}')">✅ 使用该计划</button>
+          <button class="btn btn-secondary" style="padding: 8px 18px;" onclick="regeneratePlan()">🔄 重新生成</button>
+          ${hasPlanId ? "" : `<button class="btn btn-secondary" style="padding: 8px 18px;" onclick="savePlanManual()">💾 手动保存</button>`}
+          <span style="color: var(--text-light); font-size: 12px; line-height: 36px;">${savedText}</span>
+        </div>`;
+
+        // ====== 升级提示卡（按 plan_duration 决定展示什么） ======
+        if (planDuration === "1_day") {
+          // 1 天示范 → 提供「完整7天」和「月度框架」两个升级按钮
+          html += `<div id="planUpgradePrompt_${messageUuid || "id"}" style="margin-top: 14px; padding: 12px 16px; background: linear-gradient(135deg, rgba(99,102,241,0.12), rgba(16,185,129,0.08)); border: 1px solid var(--accent-primary); border-radius: 10px;">
+            <div style="font-weight: 700; font-size: 13px; margin-bottom: 8px;">📌 这是 1 天示范计划。需要我帮您生成完整 7 天 / 1 个月的计划吗？</div>
+            <div style="font-size: 12px; color: var(--text-light); margin-bottom: 10px;">完整 7 天计划包含每天不重样的三餐搭配；月度计划为您提供 4 周框架，每天有清晰的热量区间与食材选择建议，更方便长期执行。</div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button class="btn" style="padding: 6px 16px; font-size: 13px;" onclick="generate7DayPlan()">🗓️ 生成完整 7 天计划</button>
+              <button class="btn btn-secondary" style="padding: 6px 16px; font-size: 13px;" onclick="generateMonthPlan()">📅 生成月度计划框架</button>
+              <button class="btn btn-secondary" style="padding: 6px 16px; font-size: 13px;" onclick="document.getElementById('planUpgradePrompt_${messageUuid || "id"}').style.display='none'">暂不需要</button>
+            </div>
+          </div>`;
+        } else if (planDuration === "7_days") {
+          // 完整 7 天 → 提供「月度框架」升级按钮
+          html += `<div id="planUpgradePrompt_${messageUuid || "id"}" style="margin-top: 14px; padding: 12px 16px; background: rgba(99, 102, 241, 0.1); border: 1px solid var(--accent-primary); border-radius: 10px;">
+            <div style="font-size: 13px; margin-bottom: 8px;">📅 是否要为您制定一个月（4周）的框架性饮食计划？方便长期执行与参考。</div>
+            <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+              <button class="btn" style="padding: 6px 16px; font-size: 13px;" onclick="generateMonthPlan()">生成月度计划框架</button>
+              <button class="btn btn-secondary" style="padding: 6px 16px; font-size: 13px;" onclick="document.getElementById('planUpgradePrompt_${messageUuid || "id"}').style.display='none'">暂不需要</button>
+            </div>
+          </div>`;
+        }
+
+        html += `</div>`;
+        return html;
+      }
+
+      async function usePlan(planId, messageUuid) {
+        if (!planId || planId <= 0) {
+          showToast("计划未保存，无法使用。请先登录后重新生成计划");
+          return;
+        }
+        // 提交 use_plan 反馈
+        if (token) {
+          try {
+            await apiCall("POST", "/api/v1/feedback/plan", {
+              plan_id: planId,
+              action: "use_plan",
+            });
+          } catch (e) {}
+        }
+        showToast("已使用该计划！可在个人中心查看");
+        // 切换到个人中心
+        switchTab(
+          "profile",
+          document.querySelector('.nav-item[data-tab="profile"]'),
+        );
+      }
+
+      async function savePlanManual() {
+        if (!token) {
+          showToast("请先登录后保存计划");
+          return;
+        }
+        if (!lastPlan || !lastPlan.config) {
+          showToast("暂无可保存的计划，请先生成一份");
+          return;
+        }
+        // 已有 plan_id → 更新；否则 → 手动新建
+        let r;
+        if (lastPlan.plan_id) {
+          r = await apiCall("PUT", `/api/v1/plans/${lastPlan.plan_id}`, {
+            config: lastPlan.config,
+          });
+        } else {
+          r = await apiCall("POST", "/api/v1/plans/save-config", {
+            config: lastPlan.config,
+            goal_type: lastPlan.goal_type || "health_maintenance",
+          });
+          // 保存成功后更新 lastPlan.plan_id（让"使用该计划"按钮不再灰）
+          if (r.ok && r.data?.plan_id) {
+            lastPlan.plan_id = r.data.plan_id;
+          }
+        }
+        if (r.ok) {
+          showToast("✅ 计划已保存到「我的计划」");
+          // 触发右侧栏个人中心刷新
+          loadUserProfile();
+          // 🆕 手动刷新计划列表（右侧 sidebar + 左侧主区域双保险）
+          if (typeof loadExistingPlans === "function") loadExistingPlans();
+          // 🆕 动态激活最新回答里的"使用该计划"按钮
+          setTimeout(() => {
+            const buttons = document.querySelectorAll(
+              'button[onclick^="usePlan"]',
+            );
+            buttons.forEach((btn) => {
+              if (btn.disabled) {
+                btn.disabled = false;
+                btn.style.background = "#10b981";
+                btn.style.opacity = "1";
+              }
+            });
+          }, 300);
+        } else {
+          let err = r.data?.detail || "保存失败";
+          if (typeof r.data === "string") err = r.data;
+          showToast("保存失败：" + err);
+        }
+      }
+
+      // 从对话历史中提取最近一次用户提到的身高/体重/年龄/性别等个人信息
+      function extractLastProfileHint() {
+        // 倒序扫描，取最新的一条含个人信息的用户消息
+        for (let i = conversationContext.length - 1; i >= 0; i--) {
+          const msg = conversationContext[i];
+          if (msg.role !== "user") continue;
+          const text = msg.content || "";
+          const hasProfile =
+            /(身高|体重|岁|cm|公斤|kg|斤|男|女|男性|女性)/i.test(text);
+          if (hasProfile) return text;
+        }
+        return "";
+      }
+
+      function generate7DayPlan() {
+        const hint = extractLastProfileHint();
+        const q = hint
+          ? `请基于我的最新情况（${hint}），为我制定完整7天的一周饮食计划`
+          : "请为我制定完整7天的一周饮食计划";
+        document.getElementById("ragQuery").value = q;
+        sendRAGQuery("7_days");
+      }
+
+      function generateMonthPlan() {
+        const hint = extractLastProfileHint();
+        const q = hint
+          ? `请基于我的最新情况（${hint}），为我制定一个月（4周/30天）的完整饮食计划框架`
+          : "请为我制定一个月（4周/30天）的完整饮食计划框架";
+        document.getElementById("ragQuery").value = q;
+        sendRAGQuery("30_days");
+      }
+
+      function regeneratePlan() {
+        const hint = extractLastProfileHint();
+        const q = hint
+          ? `请基于我的最新情况（${hint}），重新为我生成一份完整7天的饮食计划`
+          : "请重新为我生成一份完整7天的饮食计划";
+        document.getElementById("ragQuery").value = q;
+        sendRAGQuery("7_days");
       }
 
       function clearChat() {
@@ -2389,6 +3920,101 @@
       // ============================================================
       // 饮食记录
       // ============================================================
+
+      function renderDietSummary(summary) {
+        const area = document.getElementById("dailySummaryArea");
+        if (!summary) {
+          area.innerHTML =
+            '<span style="color: var(--text-muted); font-size: 12px;">请登录后查看今日汇总</span>';
+          return;
+        }
+        if (summary.error) {
+          area.innerHTML = `<span style="color: #f56565; font-size: 13px;">${summary.error}</span>`;
+          return;
+        }
+
+        document.getElementById("summaryCalories").textContent =
+          `今日总热量：${(summary.total_calories || 0).toFixed(1)} kcal`;
+
+        // 后端返回结构: by_meal = { breakfast: {items: [...], calories: N }, ... }
+        const mealLabels = {
+          breakfast: "早餐",
+          lunch: "午餐",
+          dinner: "晚餐",
+          snack: "加餐",
+        };
+        let html = "";
+        for (const meal of ["breakfast", "lunch", "dinner", "snack"]) {
+          const mealData = summary.by_meal?.[meal];
+          const list = mealData?.items || [];
+          if (!list.length) continue;
+          const mealCals = mealData?.calories || 0;
+          html += `<div style="margin-bottom: 12px;">
+            <div style="font-weight: 600; font-size: 13px; margin-bottom: 6px; color: var(--text-main);">${mealLabels[meal] || meal}（${mealCals.toFixed(1)} kcal）</div>
+            <div style="overflow-x: auto; border: 1px solid var(--border); border-radius: 6px;">
+              <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+                <thead>
+                  <tr style="background: #f1f5f9;">
+                    <th style="padding: 6px 8px; text-align: left;">食物</th>
+                    <th style="padding: 6px 8px;">份量(g)</th>
+                    <th style="padding: 6px 8px;">热量(kcal)</th>
+                    <th style="padding: 6px 8px;">蛋白(g)</th>
+                    <th style="padding: 6px 8px;">脂肪(g)</th>
+                    <th style="padding: 6px 8px;">碳水(g)</th>
+                    <th style="padding: 6px 8px;">操作</th>
+                  </tr>
+                </thead>
+                <tbody>`;
+          for (const item of list) {
+            const macros = item.actual_macros || {};
+            const cal = item.calories || item.calculated_calories || 0;
+            html += `<tr style="border-top: 1px solid var(--border);">
+              <td style="padding: 6px 8px; font-weight: 500;">${item.food_name || "食物"}</td>
+              <td style="padding: 6px 8px; text-align: center;">${item.quantity_grams || 0}</td>
+              <td style="padding: 6px 8px; text-align: center;">${cal.toFixed(1)}</td>
+              <td style="padding: 6px 8px; text-align: center;">${(item.protein || macros.protein || 0).toFixed(1)}</td>
+              <td style="padding: 6px 8px; text-align: center;">${(item.fat || macros.fat || 0).toFixed(1)}</td>
+              <td style="padding: 6px 8px; text-align: center;">${(item.carbs || macros.carbs || 0).toFixed(1)}</td>
+              <td style="padding: 6px 8px; text-align: center;">
+                <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 11px;" onclick="deleteDietLog(${item.log_id || item.id})">删除</button>
+              </td>
+            </tr>`;
+          }
+          html += `</tbody></table></div></div>`;
+        }
+
+        if (!html) {
+          html =
+            '<span style="color: var(--text-muted); font-size: 12px;">今日暂无饮食记录</span>';
+        }
+        area.innerHTML = html;
+      }
+
+      async function loadDailyDietSummary() {
+        if (!token) {
+          renderDietSummary({ error: "请先登录" });
+          return;
+        }
+        const r = await apiCall("GET", "/api/v1/diet/summary");
+        if (r.ok) renderDietSummary(r.data);
+        else {
+          let err = r.data?.detail || "加载汇总失败";
+          if (typeof r.data === "string") err = r.data;
+          renderDietSummary({ error: err });
+        }
+      }
+
+      async function deleteDietLog(logId) {
+        if (!confirm("确认删除这条饮食记录？")) return;
+        const r = await apiCall("DELETE", `/api/v1/diet/${logId}`);
+        if (r.ok) {
+          showToast("删除成功");
+          loadDailyDietSummary();
+        } else {
+          showToast("删除失败");
+        }
+      }
+
       async function parseDiet() {
         const text = document.getElementById("dietText").value;
         if (!text) {
@@ -2396,11 +4022,136 @@
           return;
         }
         if (!token) {
-          displayResult("dietResult", "请先登录后使用此功能", true);
+          displayDietResult("请先登录后使用此功能", true);
           return;
         }
+        document.getElementById("dietResult").className = "result";
+        document.getElementById("dietResult").innerHTML =
+          '<span class="loading"></span>AI 正在解析...';
         const r = await apiCall("POST", "/api/v1/diet/parse", { text });
-        displayResult("dietResult", r.data, !r.ok);
+        let html = "";
+        if (r.ok) {
+          const d = r.data;
+          html = `<div style="font-size: 13px; line-height: 1.8;">`;
+          if (d.logged && d.logged.length) {
+            html += `<div style="color: #16a34a; font-weight: 600; margin-bottom: 6px;">✅ 已自动写入 ${d.logged.length} 条记录</div>`;
+            for (const item of d.logged) {
+              html += `<div style="padding: 4px 0;">• ${item.food_name || "食物"} ${item.quantity_grams}g → ${(item.calculated_calories || 0).toFixed(1)} kcal</div>`;
+            }
+          }
+          if (d.candidates && d.candidates.length) {
+            html += `<div style="color: #b45309; font-weight: 600; margin: 8px 0 6px;">⚠️ 以下匹配项需手动确认写入：</div>`;
+            html += renderCandidatesTable(d.candidates);
+          }
+          if (d.unmatched && d.unmatched.length) {
+            html += `<div style="color: #dc2626; font-weight: 600; margin: 8px 0 6px;">❌ 未收录的食物：</div>`;
+            for (const item of d.unmatched) {
+              const foodName =
+                typeof item === "string"
+                  ? item
+                  : item.food_name || item.name || "未知食物";
+              html += `<div style="padding: 4px 0; display: flex; align-items: center; gap: 8px;">
+                <span>• ${foodName}</span>
+                <button class="btn btn-secondary" style="padding: 2px 8px; font-size: 11px;" onclick="searchUnmatchedFood('${foodName.replace(/'/g, "\\'")}')">🔍 搜索添加</button>
+              </div>`;
+            }
+            html += `<div style="font-size: 12px; color: var(--text-light); margin-top: 6px;">💡 点击"搜索添加"可在下方食物搜索框中查找并手动记录</div>`;
+          }
+          if (d.total_calories !== undefined) {
+            html += `<div style="margin-top: 10px; font-weight: 600; color: var(--accent);">总热量：${d.total_calories.toFixed(1)} kcal</div>`;
+          }
+          html += `</div>`;
+          document.getElementById("dietResult").className = "result success";
+          showToast(
+            `解析完成${d.logged && d.logged.length ? `，已写入 ${d.logged.length} 条` : ""}`,
+          );
+          loadDailyDietSummary();
+        } else {
+          let err = r.data?.detail || "解析失败";
+          if (typeof r.data === "string") err = r.data;
+          html = err;
+          document.getElementById("dietResult").className = "result error";
+        }
+        document.getElementById("dietResult").innerHTML = html;
+      }
+
+      function displayDietResult(html, isError) {
+        const el = document.getElementById("dietResult");
+        el.className = "result" + (isError ? " error" : " success");
+        el.innerHTML = html;
+      }
+
+      function searchUnmatchedFood(foodName) {
+        // 填入搜索框并自动搜索
+        document.getElementById("foodKeyword").value = foodName;
+        searchFood();
+        // 滚动到食物搜索区域
+        document
+          .getElementById("foodKeyword")
+          .scrollIntoView({ behavior: "smooth", block: "center" });
+        showToast(`已填入"${foodName}"，请从搜索结果中选择正确的食物品种`);
+      }
+
+      function renderCandidatesTable(candidates) {
+        if (!candidates.length) return "";
+        let html = `<div style="overflow-x: auto; border: 1px solid var(--border); border-radius: 6px;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 12px;">
+            <thead><tr style="background: #fef3c7;">
+              <th style="padding: 6px 8px; text-align: left;">食物</th>
+              <th style="padding: 6px 8px;">热量(kcal)</th>
+              <th style="padding: 6px 8px;">蛋白(g)</th>
+              <th style="padding: 6px 8px;">脂肪(g)</th>
+              <th style="padding: 6px 8px;">碳水(g)</th>
+              <th style="padding: 6px 8px;">份量(g)</th>
+              <th style="padding: 6px 8px;">餐次</th>
+              <th style="padding: 6px 8px;">操作</th>
+            </tr></thead><tbody>`;
+        for (let i = 0; i < candidates.length; i++) {
+          const c = candidates[i];
+          const n = c.nutrition || c || {};
+          html += `<tr style="border-top: 1px solid var(--border);">
+            <td style="padding: 6px 8px; font-weight: 500;">${c.food_name || n.food_name || "食物"}</td>
+            <td style="padding: 6px 8px; text-align: center;">${(n.calories_per_100g || 0).toFixed(1)}</td>
+            <td style="padding: 6px 8px; text-align: center;">${(n.protein || 0).toFixed(1)}</td>
+            <td style="padding: 6px 8px; text-align: center;">${(n.fat || 0).toFixed(1)}</td>
+            <td style="padding: 6px 8px; text-align: center;">${(n.carbs || 0).toFixed(1)}</td>
+            <td style="padding: 6px 8px; text-align: center;">
+              <input type="number" id="candQty_${i}" value="${c.quantity_grams || 100}" style="width: 60px; padding: 2px 4px; font-size: 12px;">
+            </td>
+            <td style="padding: 6px 8px; text-align: center;">
+              <select id="candMeal_${i}" style="padding: 2px 4px; font-size: 12px;">
+                <option value="breakfast">早餐</option>
+                <option value="lunch">午餐</option>
+                <option value="dinner">晚餐</option>
+                <option value="snack">加餐</option>
+              </select>
+            </td>
+            <td style="padding: 6px 8px; text-align: center;">
+              <button class="btn" style="padding: 2px 8px; font-size: 11px;" onclick="confirmCandidate(${candidates[i].nutrition_id}, ${i})">记录</button>
+            </td>
+          </tr>`;
+        }
+        html += `</tbody></table></div>`;
+        return html;
+      }
+
+      async function confirmCandidate(nutritionId, idx) {
+        if (!token) return;
+        const qty = parseFloat(document.getElementById(`candQty_${idx}`).value);
+        const meal = document.getElementById(`candMeal_${idx}`).value;
+        const r = await apiCall("POST", "/api/v1/diet/record", {
+          nutrition_id: nutritionId,
+          quantity_grams: qty,
+          meal_type: meal,
+        });
+        if (r.ok) {
+          showToast("记录成功");
+          loadDailyDietSummary();
+        } else {
+          let err = r.data?.detail || "记录失败";
+          if (typeof r.data === "string") err = r.data;
+          showToast(err);
+        }
       }
 
       async function searchFood() {
@@ -2411,11 +4162,97 @@
         }
         const r = await apiCall(
           "GET",
-          `/api/v1/diet/search?keyword=${encodeURIComponent(keyword)}&limit=5`,
+          `/api/v1/diet/search?keyword=${encodeURIComponent(keyword)}&limit=10`,
           null,
           false,
         );
-        displayResult("foodResult", r.data, !r.ok);
+        const el = document.getElementById("foodResult");
+        if (!r.ok || r.data.error) {
+          el.className = "result error";
+          const msg = r.data?.detail || r.data?.error || "搜索失败";
+          el.textContent = typeof msg === "string" ? msg : "搜索失败";
+          return;
+        }
+        const results = Array.isArray(r.data)
+          ? r.data
+          : r.data.data || r.data.results || r.data.items || [];
+        if (!results.length) {
+          el.className = "result";
+          el.textContent = "没有找到相关食物";
+          return;
+        }
+        // 渲染表格
+        el.className = "";
+        el.style.cssText = "margin-top: 10px;";
+        let html = `<div style="overflow-x: auto; border: 1px solid var(--border); border-radius: 8px;">
+          <table style="width: 100%; border-collapse: collapse; font-size: 13px;">
+            <thead><tr style="background: #f1f5f9;">
+              <th style="padding: 10px 12px; text-align: left;">食物名称</th>
+              <th style="padding: 10px 12px; text-align: center;">分类</th>
+              <th style="padding: 10px 12px; text-align: center;">热量(kcal/100g)</th>
+              <th style="padding: 10px 12px; text-align: center;">蛋白(g)</th>
+              <th style="padding: 10px 12px; text-align: center;">脂肪(g)</th>
+              <th style="padding: 10px 12px; text-align: center;">碳水(g)</th>
+              <th style="padding: 10px 12px; text-align: center;">份量(g)</th>
+              <th style="padding: 10px 12px; text-align: center;">餐次</th>
+              <th style="padding: 10px 12px; text-align: center;">记录</th>
+            </tr></thead><tbody>`;
+        for (let i = 0; i < results.length; i++) {
+          const item = results[i];
+          html += `<tr style="border-top: 1px solid var(--border);">
+            <td style="padding: 10px 12px; font-weight: 500;">${item.food_name || item.name || "食物"}</td>
+            <td style="padding: 10px 12px; text-align: center; font-size: 12px; color: var(--text-muted);">${item.category || "-"}</td>
+            <td style="padding: 10px 12px; text-align: center;">${(item.calories_per_100g || 0).toFixed(1)}</td>
+            <td style="padding: 10px 12px; text-align: center;">${(item.protein || item.protein_per_100g || 0).toFixed(1)}</td>
+            <td style="padding: 10px 12px; text-align: center;">${(item.fat || item.fat_per_100g || 0).toFixed(1)}</td>
+            <td style="padding: 10px 12px; text-align: center;">${(item.carbs || item.carbs_per_100g || 0).toFixed(1)}</td>
+            <td style="padding: 10px 12px; text-align: center;">
+              <input type="number" id="foodQty_${i}" value="100" style="width: 64px; padding: 3px 6px; font-size: 12px;">
+            </td>
+            <td style="padding: 10px 12px; text-align: center;">
+              <select id="foodMeal_${i}" style="padding: 3px 4px; font-size: 12px;">
+                <option value="breakfast">早餐</option>
+                <option value="lunch">午餐</option>
+                <option value="dinner">晚餐</option>
+                <option value="snack">加餐</option>
+              </select>
+            </td>
+            <td style="padding: 10px 12px; text-align: center;">
+              <button class="btn" style="padding: 4px 10px; font-size: 12px;" onclick="recordFoodSearchResult(${item.id || item.nutrition_id}, ${i})">➕ 记录</button>
+            </td>
+          </tr>`;
+        }
+        html += `</tbody></table></div>`;
+        el.innerHTML = html;
+        if (!token) {
+          const tip = document.createElement("div");
+          tip.style.cssText =
+            "margin-top: 8px; color: var(--text-muted); font-size: 12px;";
+          tip.textContent = "提示：需要登录后才能记录饮食";
+          el.appendChild(tip);
+        }
+      }
+
+      async function recordFoodSearchResult(nutritionId, idx) {
+        if (!token) {
+          showToast("请先登录后记录");
+          return;
+        }
+        const qty = parseFloat(document.getElementById(`foodQty_${idx}`).value);
+        const meal = document.getElementById(`foodMeal_${idx}`).value;
+        const r = await apiCall("POST", "/api/v1/diet/record", {
+          nutrition_id: nutritionId,
+          quantity_grams: qty,
+          meal_type: meal,
+        });
+        if (r.ok) {
+          showToast("记录成功！");
+          loadDailyDietSummary();
+        } else {
+          let err = r.data?.detail || "记录失败";
+          if (typeof r.data === "string") err = r.data;
+          showToast(err);
+        }
       }
 
       // ============================================================
@@ -2471,21 +4308,36 @@
       // 文档溯源弹窗：点击来源链接查看原文档片段
       // ============================================================
 
-      const modalOverlay = document.getElementById("sourceModalOverlay");
-      const modalClose = document.getElementById("sourceModalClose");
+      document.addEventListener("DOMContentLoaded", function () {
+        const modalOverlay = document.getElementById("sourceModalOverlay");
+        const modalClose = document.getElementById("sourceModalClose");
 
-      modalClose.addEventListener("click", closeSourceModal);
-      modalOverlay.addEventListener("click", (e) => {
-        if (e.target === modalOverlay) closeSourceModal();
+        if (modalClose) {
+          modalClose.addEventListener("click", closeSourceModal);
+        }
+        if (modalOverlay) {
+          modalOverlay.addEventListener("click", (e) => {
+            if (e.target === modalOverlay) closeSourceModal();
+          });
+        }
       });
+
       document.addEventListener("keydown", (e) => {
-        if (e.key === "Escape" && modalOverlay.classList.contains("active")) {
+        const modalOverlay = document.getElementById("sourceModalOverlay");
+        if (
+          e.key === "Escape" &&
+          modalOverlay &&
+          modalOverlay.classList.contains("active")
+        ) {
           closeSourceModal();
         }
       });
 
       function closeSourceModal() {
-        modalOverlay.classList.remove("active");
+        const modalOverlay = document.getElementById("sourceModalOverlay");
+        if (modalOverlay) {
+          modalOverlay.classList.remove("active");
+        }
       }
 
       async function openSourceChunk(chunkId, index) {

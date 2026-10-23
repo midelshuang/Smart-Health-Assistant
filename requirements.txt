@@ -14,7 +14,8 @@ psycopg2-binary==2.9.9
 python-dotenv==1.0.1
 
 # 认证
-python-jose[cryptography]==3.3.0
+# 注意：python-jose 3.4.0 修复 CVE-2024-33663（算法混淆）与 CVE-2024-33664（JWT bomb DoS）
+python-jose[cryptography]==3.4.0
 passlib[bcrypt]==1.7.4
 pydantic==2.9.2
 pydantic-settings==2.5.2
@@ -48,6 +49,11 @@ PyMuPDF==1.28.0
 # 监控
 prometheus-client==0.20.0
 
+# 集中化日志告警
+# Sentry：未配置 SENTRY_DSN 时自动跳过，不影响主流程
+# Loki：通过 Promtail 抓取 JSON 格式日志文件收集，无需 Python 端依赖
+sentry-sdk[fastapi]==1.44.0
+
 # 分布式追踪（OpenTelemetry）
 opentelemetry-api==1.24.0
 opentelemetry-sdk==1.24.0
@@ -67,5 +73,14 @@ tenacity==8.5.0
 
 # 测试
 pytest==8.3.3
+pytest-cov==5.0.0
 httpx==0.27.2
 pytest-asyncio==0.24.0
+
+# 数据库迁移（Alembic）
+# 用法：
+#   alembic init alembic           # 首次生成迁移目录
+#   alembic revision --autogenerate -m "msg"  # 生成迁移
+#   alembic upgrade head           # 应用迁移
+#   alembic downgrade -1           # 回滚一格
+alembic==1.13.2

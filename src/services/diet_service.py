@@ -6,6 +6,13 @@ from src.services.base_service import require_ownership
 
 logger = setup_logger(name="DietService")
 
+# 全局餐次映射常量
+MEAL_TYPE_MAP = {
+    "早餐": "breakfast", "午饭": "lunch", "晚餐": "dinner", "加餐": "snack",
+    "breakfast": "breakfast", "lunch": "lunch", "dinner": "dinner", "snack": "snack",
+    "中午": "lunch", "晚上": "dinner", "早上": "breakfast",
+}
+
 
 # ==========================================
 # 🆕 新增：搜索食物接口
@@ -17,14 +24,13 @@ def search_foods(
 ) -> dict:
     """
     根据关键词搜索食物，返回前 limit 条结果供用户选择
+    支持智能匹配：精确匹配 > 前缀匹配 > 子串匹配
     """
     if not keyword:
         return {"error": "请输入搜索关键词"}
 
-    # 模糊搜索：名字包含关键词
-    results = db.query(NutritionFact).filter(
-        NutritionFact.food_name.contains(keyword)
-    ).limit(limit).all()
+    from src.services.food_parser import match_food_in_db
+    results = match_food_in_db(db, keyword, limit=limit)
 
     if not results:
         return {
@@ -35,20 +41,14 @@ def search_foods(
     # 构建返回给前端的数据列表
     food_list = []
     for item in results:
-        # 安全处理可能为 None 的数值
-        cals = float(item.calories_per_100g or 0)
-        pro = float(item.protein or 0)
-        fat = float(item.fat or 0)
-        carb = float(item.carbs or 0)
-
         food_list.append({
-            "id": item.id,
-            "name": item.food_name,
-            "calories_per_100g": round(cals, 1),
-            "protein_per_100g": round(pro, 1),
-            "fat_per_100g": round(fat, 1),
-            "carbs_per_100g": round(carb, 1),
-            "category": item.category
+            "id": item["id"],
+            "name": item["food_name"],
+            "calories_per_100g": item["calories_per_100g"],
+            "protein_per_100g": item["protein"],
+            "fat_per_100g": item["fat"],
+            "carbs_per_100g": item["carbs"],
+            "category": item.get("category", "")
         })
 
     return {
@@ -69,10 +69,6 @@ def log_diet_entry(
         meal_type: str = "snack"
 ) -> dict:
     # 1. 翻译餐别
-    MEAL_TYPE_MAP = {
-        "早餐": "breakfast", "午饭": "lunch", "晚餐": "dinner", "加餐": "snack",
-        "breakfast": "breakfast", "lunch": "lunch", "dinner": "dinner", "snack": "snack"
-    }
     standard_meal_type = MEAL_TYPE_MAP.get(meal_type, "snack")
 
     # 2. 根据 ID 精准查找食物
@@ -260,36 +256,62 @@ def parse_and_log_diet(
             continue
 
         if len(matches) == 1:
-            # 唯一命中：自动入库
+            # 唯一命中
             food = matches[0]
-            log_entry = _create_diet_log_internal(
-                db=db,
-                user_id=user_id,
-                nutrition_id=food["id"],
-                quantity_grams=grams,
-                meal_type=meal_type,
-                food_name=food["food_name"],
-                calories_per_100g=food["calories_per_100g"],
-                protein=food["protein"],
-                fat=food["fat"],
-                carbs=food["carbs"],
-            )
+            if auto_create:
+                # 自动入库
+                log_entry = _create_diet_log_internal(
+                    db=db,
+                    user_id=user_id,
+                    nutrition_id=food["id"],
+                    quantity_grams=grams,
+                    meal_type=meal_type,
+                    food_name=food["food_name"],
+                    calories_per_100g=food["calories_per_100g"],
+                    protein=food["protein"],
+                    fat=food["fat"],
+                    carbs=food["carbs"],
+                )
+            else:
+                # 仅解析不入库：手动计算
+                weight_ratio = Decimal(str(grams)) / Decimal("100")
+                log_entry = {
+                    "food_name": food["food_name"],
+                    "quantity_grams": float(grams),
+                    "meal_type": MEAL_TYPE_MAP.get(meal_type, "snack"),
+                    "meal_type_cn": MEAL_TYPE_CN.get(MEAL_TYPE_MAP.get(meal_type, "snack"), "加餐"),
+                    "calories": float(Decimal(str(food["calories_per_100g"])) * weight_ratio),
+                    "protein": float(Decimal(str(food["protein"])) * weight_ratio),
+                    "fat": float(Decimal(str(food["fat"])) * weight_ratio),
+                    "carbs": float(Decimal(str(food["carbs"])) * weight_ratio),
+                }
             logged.append(log_entry)
             total_cal += log_entry["calories"]
             total_pro += log_entry["protein"]
             total_fat += log_entry["fat"]
             total_carb += log_entry["carbs"]
         else:
-            # 多个候选：返回给用户选择
-            candidates.append({
+            # 多个候选：返回给用户选择 —— 扁平化，每个 match 独立一行
+            food_info_common = {
                 "food_name": food_name,
                 "quantity": it["quantity"],
                 "unit": it["unit"],
                 "estimated_grams": grams,
                 "meal_type": meal_type,
                 "meal_type_cn": MEAL_TYPE_CN.get(meal_type, "加餐"),
-                "candidates": matches,
-            })
+            }
+            for match in matches:
+                candidates.append({
+                    **food_info_common,
+                    # 统一 id / nutrition_id 两个字段，前端用 nutrition_id
+                    "id": match.get("id"),
+                    "nutrition_id": match.get("id"),
+                    "category": match.get("category"),
+                    "calories_per_100g": match.get("calories_per_100g"),
+                    "protein": match.get("protein"),
+                    "fat": match.get("fat"),
+                    "carbs": match.get("carbs"),
+                })
 
     logger.info(
         f"饮食记录完成: 已写入 {len(logged)} 项, 候选 {len(candidates)} 项, "

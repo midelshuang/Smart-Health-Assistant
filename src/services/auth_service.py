@@ -10,7 +10,9 @@
 - 可选认证（游客模式）
 - RBAC 角色权限控制
 - 修改密码 / 重置密码（安全问题）
+- Token 撤销黑名单（Redis，登出/改密时使用）
 """
+import secrets
 from fastapi import Depends, HTTPException, status, Header
 from fastapi.security import OAuth2PasswordBearer
 from jose import jwt, JWTError
@@ -23,6 +25,7 @@ from src.models.db_models import User
 from passlib.context import CryptContext
 from src.config.settings import SECRET_KEY, ALGORITHM
 from src.utils.logger import setup_logger
+from src.utils.redis_client import get_redis_client, build_key
 
 logger = setup_logger(name="AuthService")
 
@@ -36,6 +39,89 @@ TOKEN_TYPE_REFRESH = "refresh"
 
 VALID_ROLES = {"user", "admin", "expert"}
 ROLE_HIERARCHY = {"user": 0, "expert": 1, "admin": 2}
+
+# ============================================================
+# Token 撤销黑名单（Redis 存储，与 token 同 TTL 自然清理）
+# ============================================================
+# 设计要点：
+# 1. 黑名单 key 形如 jwt:bl:{jti}，value 为 "1"，TTL 与原 token 过期对齐
+# 2. Redis 不可用时 fail-open：避免 Redis 故障导致所有用户被踢出
+# 3. 旧 token 没有 jti 字段，向后兼容不视为已撤销
+KEY_PREFIX_JWT_BLACKLIST = "jwt:bl"
+# 黑名单 TTL 略大于 token 寿命，确保已撤销 token 在自然过期前一直被拒
+KEY_TTL_ACCESS_BLACKLIST = ACCESS_TOKEN_EXPIRE_MINUTES * 60 + 60   # 31 分钟
+KEY_TTL_REFRESH_BLACKLIST = REFRESH_TOKEN_EXPIRE_DAYS * 24 * 3600 + 3600  # 7 天 1 小时
+
+
+def _generate_jti() -> str:
+    """生成 token 唯一标识（JWT ID）"""
+    return secrets.token_urlsafe(16)
+
+
+def revoke_token(jti: str, ttl: int, token_type: str = "access") -> bool:
+    """
+    将 token 的 jti 写入 Redis 黑名单，TTL 与原 token 过期时间对齐
+
+    Args:
+        jti: token 的 JWT ID
+        ttl: 黑名单存活时长（秒），应略大于原 token 剩余寿命
+        token_type: access / refresh，仅用于日志
+
+    Returns:
+        True 撤销成功，False Redis 不可用（fail-open，不阻断业务）
+    """
+    if not jti:
+        logger.warning(f"尝试撤销空 jti 的 {token_type} token，已忽略")
+        return False
+
+    client = get_redis_client()
+    if not client.is_available():
+        # Redis 不可用时 fail-open：避免误伤所有用户
+        # 业务影响：被撤销的 token 在 Redis 恢复前仍可用，最长不超过其自然过期时间
+        logger.warning(f"Redis 不可用，无法撤销 {token_type} token jti={jti[:8]}...（fail-open）")
+        return False
+
+    key = build_key(KEY_PREFIX_JWT_BLACKLIST, jti)
+    ok = client.setex(key, "1", ttl)
+    if ok:
+        logger.info(f"已撤销 {token_type} token jti={jti[:8]}...，TTL={ttl}s")
+    return ok
+
+
+def is_token_revoked(jti: Optional[str]) -> bool:
+    """
+    检查 token jti 是否在黑名单中
+
+    规则：
+    - jti 为空（旧 token 无 jti 字段）：返回 False，向后兼容
+    - Redis 不可用：返回 False，fail-open
+    - 其他情况：查 Redis 是否存在
+    """
+    if not jti:
+        # 旧 token 没有 jti 字段，向后兼容不视为已撤销
+        return False
+
+    client = get_redis_client()
+    if not client.is_available():
+        # Redis 不可用时 fail-open，避免误伤所有用户
+        return False
+
+    return client.exists(build_key(KEY_PREFIX_JWT_BLACKLIST, jti))
+
+
+# ============================================================
+# Token 剩余寿命计算（用于黑名单 TTL）
+# ============================================================
+def _calc_token_ttl_seconds(payload: dict, default_ttl: int) -> int:
+    """从 payload.exp 计算剩余寿命（秒），不能小于 1"""
+    exp = payload.get("exp")
+    if not exp:
+        return default_ttl
+    try:
+        remaining = int(exp) - int(datetime.utcnow().timestamp())
+        return max(remaining, 1)
+    except (ValueError, TypeError):
+        return default_ttl
 
 
 class GuestUser:
@@ -88,12 +174,16 @@ def hash_password(plain_password: str) -> str:
 # Token 生成
 # ============================================================
 def create_access_token(data: dict, expires_delta: timedelta = None) -> str:
-    """生成 Access Token（短期，用于 API 鉴权）"""
+    """生成 Access Token（短期，用于 API 鉴权）
+
+    新增 jti（JWT ID）字段，用于登出/改密时撤销单条 token
+    """
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES))
     to_encode.update({
         "exp": expire,
         "type": TOKEN_TYPE_ACCESS,
+        "jti": _generate_jti(),
     })
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -105,12 +195,14 @@ def create_refresh_token(data: dict, expires_delta: timedelta = None) -> str:
     - 包含 type=refresh 标识
     - 有效期更长（默认 7 天）
     - 不能直接用于业务接口鉴权
+    - 含 jti 字段，登出时可撤销
     """
     to_encode = data.copy()
     expire = datetime.utcnow() + (expires_delta or timedelta(days=REFRESH_TOKEN_EXPIRE_DAYS))
     to_encode.update({
         "exp": expire,
         "type": TOKEN_TYPE_REFRESH,
+        "jti": _generate_jti(),
     })
     return jwt.encode(to_encode, SECRET_KEY, algorithm=ALGORITHM)
 
@@ -127,18 +219,31 @@ def decode_token(token: str) -> dict:
 def verify_refresh_token(token: str) -> str:
     """校验 Refresh Token 并返回用户标识 (sub)
 
+    校验顺序：
+    1. 解码 + 类型校验
+    2. jti 黑名单校验（Redis 不可用时 fail-open）
+    3. sub 存在性校验
+
     Raises:
-        HTTPException 401: Token 无效/过期/类型不匹配
+        HTTPException 401: Token 无效/过期/类型不匹配/已撤销
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
         detail="无效的 Refresh Token",
         headers={"WWW-Authenticate": "Bearer"},
     )
+    revoked_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="Refresh Token 已被撤销，请重新登录",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
     try:
         payload = decode_token(token)
         if payload.get("type") != TOKEN_TYPE_REFRESH:
             raise credentials_exception
+        # 黑名单检查：登出/改密后旧 refresh token 应被拒
+        if is_token_revoked(payload.get("jti")):
+            raise revoked_exception
         sub = payload.get("sub")
         if not sub:
             raise credentials_exception
@@ -182,11 +287,16 @@ def get_current_user_id(
     """解析 Access Token 获取当前用户 ID（FastAPI 依赖）
 
     Raises:
-        HTTPException 401: Token 无效 / 用户不存在 / Token 类型错误
+        HTTPException 401: Token 无效 / 用户不存在 / Token 类型错误 / Token 已撤销
     """
     credentials_exception = HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
-        detail="无法验证凭据",
+        detail="登录已过期，请重新登录",
+        headers={"WWW-Authenticate": "Bearer"},
+    )
+    revoked_exception = HTTPException(
+        status_code=status.HTTP_401_UNAUTHORIZED,
+        detail="登录态已失效，请重新登录",
         headers={"WWW-Authenticate": "Bearer"},
     )
     try:
@@ -195,6 +305,9 @@ def get_current_user_id(
         if payload.get("type") not in (TOKEN_TYPE_ACCESS, None):
             # 兼容旧版未带 type 的 Token（视为 Access）
             raise credentials_exception
+        # 黑名单检查：登出/改密后旧 access token 应被拒
+        if is_token_revoked(payload.get("jti")):
+            raise revoked_exception
         external_id: str = payload.get("sub")
         if external_id is None or not external_id:
             raise credentials_exception

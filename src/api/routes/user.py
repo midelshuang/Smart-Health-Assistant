@@ -40,6 +40,7 @@ class UserProfileUpdate(BaseModel):
     health_goal: Optional[str] = None
     health_tags: Optional[list] = None
     allergies: Optional[str] = None
+    metabolic_data: Optional[dict] = Field(default=None, description="TDEE等代谢数据")
 
 
 class TDEERequest(BaseModel):
@@ -51,6 +52,7 @@ class TDEERequest(BaseModel):
     activity_level: Optional[str] = Field(default=None, description="活动等级（中文/英文均可）")
     goal_type: Optional[str] = Field(default=None, description="目标类型")
     body_fat_percentage: Optional[float] = Field(default=None, ge=0, le=100)
+    save_to_profile: Optional[bool] = Field(default=None, description="是否保存到档案（None=由前端决定，True=强制保存，False=不保存）")
 
 
 # ============================================================
@@ -188,7 +190,69 @@ def calculate_tdee(
         "gender": result["gender"],
     }
 
+    # 保存 TDEE 到档案（仅登录用户）
+    if not guest_mode and body.save_to_profile is not False:
+        try:
+            profile = _get_or_create_profile(db, current_user.external_id)
+            existing_tdee = (profile.metabolic_data or {}).get("tdee_result")
+            if body.save_to_profile is True:
+                # 强制保存
+                should_save = True
+            elif existing_tdee is None:
+                # 首次：自动保存，不询问
+                should_save = True
+            else:
+                # 已有TDEE：不自动保存，前端询问后决定
+                should_save = False
+
+            if should_save:
+                tdee_snapshot = {
+                    "bmr": result.get("bmr"),
+                    "tdee": result.get("tdee"),
+                    "target_calories": result.get("target_calories"),
+                    "macros": result.get("macros"),
+                    "macros_ratios": result.get("macros_ratios"),
+                    "activity_factor": result.get("activity_factor"),
+                    "activity_level": result.get("activity_level"),
+                    "goal_type": result.get("goal_type"),
+                    "bmi": result.get("bmi"),
+                    "safety_warning": result.get("safety_warning"),
+                    "saved_at": datetime.utcnow().isoformat(),
+                }
+                if profile.metabolic_data:
+                    profile.metabolic_data["tdee_result"] = tdee_snapshot
+                else:
+                    profile.metabolic_data = {"tdee_result": tdee_snapshot}
+                db.commit()
+                result["tdee_saved"] = True
+                result["tdee_is_first_save"] = (existing_tdee is None)
+            else:
+                result["tdee_saved"] = False
+                result["tdee_is_first_save"] = False
+                result["tdee_existing"] = existing_tdee
+        except Exception as e:
+            logger.warning(f"TDEE 保存到档案失败: {e}")
+            result["tdee_saved"] = False
+    else:
+        result["tdee_saved"] = False
+
     return result
+
+
+@router.get("/tdee/saved")
+def get_saved_tdee(
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """获取已保存的 TDEE 数据"""
+    profile = _get_or_create_profile(db, current_user_id)
+    metabolic = profile.metabolic_data or {}
+    tdee_result = metabolic.get("tdee_result")
+    return {
+        "has_saved_tdee": tdee_result is not None,
+        "tdee_result": tdee_result,
+    }
 
 
 def _profile_to_dict(p: UserProfile) -> dict:
@@ -207,6 +271,7 @@ def _profile_to_dict(p: UserProfile) -> dict:
         "health_goal": p.health_goal,
         "health_tags": p.health_tags,
         "allergies": p.allergies,
+        "metabolic_data": p.metabolic_data,
         "updated_at": str(p.updated_at) if p.updated_at else None,
     }
 
@@ -217,16 +282,93 @@ def admin_dashboard(
     current_user=Depends(require_role("admin")),
 ):
     """管理员仪表盘：系统统计数据"""
-    user_count = db.query(User).filter(User.is_active == True).count()
-    profile_count = db.query(UserProfile).count()
+    from sqlalchemy import func
 
+    # 1. 用户统计
+    total_users = db.query(User).filter(User.is_active == True).count()
+    total_profiles = db.query(UserProfile).count()
+
+    # 按角色统计
+    role_stats = {}
+    for role_name, role_label in [("user", "普通用户"), ("expert", "专家"), ("admin", "管理员")]:
+        cnt = db.query(User).filter(User.role == role_name, User.is_active == True).count()
+        role_stats[role_name] = {"count": cnt, "label": role_label}
+
+    # 待审批专家
+    pending_expert_count = 0
+    if hasattr(User, "approved"):
+        pending_expert_count = db.query(User).filter(
+            User.role == "expert",
+            User.approved == False,
+        ).count()
+
+    # 2. 饮食记录统计
+    from src.models.db_models import DailyDietLog, NutritionFact, ChatHistory
+    from sqlalchemy import cast, Date
+
+    diet_logs_total = db.query(DailyDietLog).count()
+    today_str = datetime.now().strftime("%Y-%m-%d")
+
+    # 今日记录数
+    diet_logs_today = db.query(DailyDietLog).filter(
+        cast(DailyDietLog.log_date, Date) == datetime.now().date()
+    ).count()
+
+    # 近7天每日记录数趋势
+    from datetime import timedelta
+    trend = []
+    for i in range(6, -1, -1):
+        day = (datetime.now() - timedelta(days=i)).date()
+        cnt = db.query(DailyDietLog).filter(
+            cast(DailyDietLog.log_date, Date) == day
+        ).count()
+        total_cal_q = db.query(func.sum(DailyDietLog.calculated_calories)).filter(
+            cast(DailyDietLog.log_date, Date) == day
+        ).scalar()
+        trend.append({
+            "date": str(day),
+            "count": cnt,
+            "total_calories": float(total_cal_q or 0),
+        })
+
+    # 3. 营养数据统计
+    nutrition_facts_count = db.query(NutritionFact).count()
+
+    # 4. 计划统计
     from src.models.db_models import Plan
     plan_count = db.query(Plan).count() if _table_exists(db, "plans") else 0
 
+    # 5. 聊天记录统计
+    chat_total = db.query(ChatHistory).count() if _table_exists(db, "chat_histories") else 0
+    chat_today = 0
+    if _table_exists(db, "chat_histories"):
+        chat_today = db.query(ChatHistory).filter(
+            cast(ChatHistory.created_at, Date) == datetime.now().date()
+        ).count()
+
+    # 6. 近24小时活跃用户
+    last_24h_active = 0
+    if hasattr(User, "last_login_at"):
+        cutoff = datetime.utcnow() - timedelta(hours=24)
+        last_24h_active = db.query(User).filter(User.last_login_at >= cutoff).count()
+
     return {
-        "total_users": user_count,
-        "total_profiles": profile_count,
+        "total_users": total_users,
+        "total_profiles": total_profiles,
         "total_plans": plan_count,
+        "role_stats": role_stats,
+        "pending_expert_count": pending_expert_count,
+        "diet_stats": {
+            "total_logs": diet_logs_total,
+            "today_logs": diet_logs_today,
+            "last_7_days_trend": trend,
+        },
+        "nutrition_count": nutrition_facts_count,
+        "chat_stats": {
+            "total": chat_total,
+            "today": chat_today,
+        },
+        "last_24h_active_users": last_24h_active,
         "server_time": datetime.utcnow().isoformat(),
     }
 
@@ -235,3 +377,106 @@ def _table_exists(db: Session, table_name: str) -> bool:
     from sqlalchemy import inspect
     inspector = inspect(db.bind)
     return table_name in inspector.get_table_names()
+
+
+# ============================================================
+# 专家审批 API（管理员）
+# ============================================================
+
+class ApproveExpertRequest(BaseModel):
+    approved: bool = Field(..., description="True=通过审批, False=拒绝")
+
+
+@router.get("/admin/pending-experts")
+def list_pending_experts(
+    db: Session = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """获取待审批专家列表"""
+    pending = db.query(User).filter(
+        User.role == "expert",
+        User.approved == False,
+    ).order_by(User.created_at.desc()).all()
+
+    data = []
+    for u in pending:
+        data.append({
+            "id": u.id,
+            "external_id": u.external_id,
+            "username": u.username,
+            "email": u.email,
+            "source": u.source,
+            "created_at": str(u.created_at) if u.created_at else None,
+        })
+
+    return {
+        "count": len(data),
+        "pending_experts": data,
+    }
+
+
+@router.get("/admin/users")
+def list_all_users(
+    role: Optional[str] = None,
+    approved: Optional[bool] = None,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """获取所有用户列表（支持筛选）"""
+    query = db.query(User)
+    if role:
+        query = query.filter(User.role == role)
+    if approved is not None:
+        if hasattr(User, "approved"):
+            query = query.filter(User.approved == approved)
+
+    users = query.order_by(User.created_at.desc()).limit(200).all()
+
+    data = []
+    for u in users:
+        data.append({
+            "id": u.id,
+            "external_id": u.external_id,
+            "username": u.username,
+            "email": u.email,
+            "role": u.role,
+            "approved": u.approved if hasattr(u, "approved") else True,
+            "source": u.source,
+            "is_active": u.is_active,
+            "created_at": str(u.created_at) if u.created_at else None,
+            "last_login_at": str(u.last_login_at) if u.last_login_at else None,
+        })
+
+    return {
+        "count": len(data),
+        "users": data,
+    }
+
+
+@router.put("/admin/users/{user_id}/approve")
+def approve_expert(
+    user_id: int,
+    body: ApproveExpertRequest,
+    db: Session = Depends(get_db),
+    current_user=Depends(require_role("admin")),
+):
+    """审批专家账号（通过/拒绝）"""
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    if user.role != "expert":
+        raise HTTPException(status_code=400, detail="仅专家账号需要审批")
+
+    user.approved = body.approved
+    db.commit()
+
+    logger.info(
+        f"管理员 {current_user.username} 审批专家: id={user_id}, "
+        f"result={'通过' if body.approved else '拒绝'}"
+    )
+
+    return {
+        "message": "审批成功" if body.approved else "已拒绝该专家账号",
+        "user_id": user_id,
+        "approved": body.approved,
+    }

@@ -12,6 +12,7 @@ LLM 客户端封装
 
 from typing import List, Dict, Optional, Any
 import json
+import logging
 import threading
 import urllib.request
 import urllib.error
@@ -107,6 +108,7 @@ class LLMClient:
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 2048,
+        timeout: int = 180,
     ) -> str:
         """
         多轮对话（用于答案生成等场景）— 带 tenacity 指数退避重试
@@ -115,6 +117,7 @@ class LLMClient:
             messages: 消息列表，格式 [{"role": "user", "content": "..."}, ...]
             temperature: 采样温度
             max_tokens: 最大生成 token 数
+            timeout: HTTP 请求超时（秒），默认 180s（大生成任务如7天计划需要充足时间）
 
         Returns:
             生成的文本
@@ -128,6 +131,8 @@ class LLMClient:
             "messages": messages,
             "temperature": temperature,
             "max_tokens": max_tokens,
+            # 注: 智谱 API 不支持 do_sample 参数，跳过（默认采样即可，
+            #     低 temperature 已足够让 JSON 输出更确定）
         }
 
         # ---- 耗时埋点：记录 LLM 调用耗时 ----
@@ -144,7 +149,7 @@ class LLMClient:
                 retry_if_exception_type((urllib.error.HTTPError, urllib.error.URLError, json.JSONDecodeError))
                 | retry_if_result(_is_empty_response)
             ),
-            before_sleep=before_sleep_log(logger, "WARNING"),
+            before_sleep=before_sleep_log(logger, logging.WARNING),
             reraise=False,
         )
         def _chat_with_retry() -> str:
@@ -152,10 +157,24 @@ class LLMClient:
             response = self._http_request(
                 endpoint="/chat/completions",
                 payload=payload,
+                timeout=timeout,
             )
             choices = response.get("choices", [])
             if choices:
-                return choices[0].get("message", {}).get("content", "").strip()
+                msg = choices[0].get("message", {}) or {}
+                content = msg.get("content", "")
+                # 某些模型（如带 Function Calling 的返回）content 可能是 null / dict / list
+                # 必须先规整成 str，再 strip
+                if content is None:
+                    content = ""
+                elif not isinstance(content, str):
+                    # 把 dict/list 转成字符串表示（LLM 应该很少这么干，但得防御）
+                    import json as _json_mod
+                    try:
+                        content = _json_mod.dumps(content, ensure_ascii=False)
+                    except Exception:
+                        content = str(content)
+                return content.strip()
             return ""
 
         try:
@@ -180,6 +199,7 @@ class LLMClient:
         messages: List[Dict[str, str]],
         temperature: float = 0.7,
         max_tokens: int = 2048,
+        timeout: int = 180,
     ):
         """
         流式多轮对话（逐 token yield）
@@ -188,6 +208,7 @@ class LLMClient:
             messages: 消息列表
             temperature: 采样温度
             max_tokens: 最大生成 token 数
+            timeout: 请求超时（秒），默认 180s
 
         Yields:
             str: 每次产出一个文本片段
@@ -217,7 +238,7 @@ class LLMClient:
         req = urllib.request.Request(url, data=data, headers=headers, method="POST")
 
         try:
-            resp = urllib.request.urlopen(req, timeout=60)
+            resp = urllib.request.urlopen(req, timeout=timeout)
             buf = b""
             # 逐块读取（4KB），高效处理 SSE 流
             while True:
@@ -267,13 +288,14 @@ class LLMClient:
         except urllib.error.URLError as e:
             logger.error(f"LLM 流式 API 连接错误: {e}")
 
-    def _http_request(self, endpoint: str, payload: dict) -> dict:
+    def _http_request(self, endpoint: str, payload: dict, timeout: int = 180) -> dict:
         """
         发送 HTTP POST 请求到 LLM API
 
         Args:
             endpoint: API 端点路径
             payload: 请求体
+            timeout: 请求超时（秒），默认 180s，避免大生成任务（如7天计划）超时
 
         Returns:
             响应 JSON 字典
@@ -299,7 +321,7 @@ class LLMClient:
 
         try:
             _t_connect = _time.perf_counter()
-            with urllib.request.urlopen(req, timeout=60) as resp:
+            with urllib.request.urlopen(req, timeout=timeout) as resp:
                 _t_read_start = _time.perf_counter()
                 _connect_ms = (_t_read_start - _t_connect) * 1000
                 body = resp.read().decode("utf-8")
@@ -370,7 +392,7 @@ class LLMClient:
             retry=(
                 retry_if_exception_type((urllib.error.HTTPError, urllib.error.URLError, json.JSONDecodeError))
             ),
-            before_sleep=before_sleep_log(logger, "WARNING"),
+            before_sleep=before_sleep_log(logger, logging.WARNING),
             reraise=False,
         )
         def _tools_with_retry() -> Dict[str, Any]:

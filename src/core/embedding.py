@@ -15,6 +15,7 @@ ZhipuAI embedding-2 模型参数：
 
 from typing import List, Optional
 import json
+import logging
 import threading
 import urllib.request
 import urllib.error
@@ -104,21 +105,42 @@ class ZhipuAIEmbeddingFunction:
 
     def embed_documents(self, texts: List[str]) -> List[List[float]]:
         """
-        批量嵌入文档文本（带 tenacity 重试 + 零向量告警）
+        批量嵌入文档文本（带 tenacity 重试 + 零向量告警 + 超长截断防御）
 
-        自动分批处理，每批最多 _BATCH_SIZE 条文本。
+        自动截断：SiliconFlow bge-large-zh 单条上限约 800 中文字符（或 512 token），
+        超长会返回 400 "The parameter is invalid"。这里统一截断到 700 字符防御。
+
+        自动去空：空字符串会被 API 拒绝。
 
         Args:
             texts: 待嵌入的文本列表
 
         Returns:
             向量列表，顺序与输入一致
-
-        Raises:
-            RuntimeError: 配置缺失或 API 调用最终失败（不静默返回零向量污染向量库）
         """
         if not texts:
             return []
+
+        # ---- 防御性预处理：截断超长 + 去空 ----
+        MAX_CHARS_PER_TEXT = 700  # SiliconFlow bge 单条上限约 800 字，留余量
+        processed_texts = []
+        _truncated_count = 0
+        _empty_count = 0
+        for t in texts:
+            if not t or not t.strip():
+                _empty_count += 1
+                processed_texts.append(" ")  # 用一个空格占位，保持索引对齐
+                continue
+            if len(t) > MAX_CHARS_PER_TEXT:
+                _truncated_count += 1
+                processed_texts.append(t[:MAX_CHARS_PER_TEXT])
+            else:
+                processed_texts.append(t)
+        if _truncated_count > 0 or _empty_count > 0:
+            logger.info(
+                f"Embedding 预处理: 截断 {_truncated_count} 条超长文本(>{MAX_CHARS_PER_TEXT}字), "
+                f"占位 {_empty_count} 条空文本"
+            )
 
         if not self._is_configured():
             # ---- [坑点修复] 原实现静默返回零向量，会导致"所有文档向量相同 → 检索完全乱序"的灾难 ----
@@ -132,9 +154,9 @@ class ZhipuAIEmbeddingFunction:
 
         all_embeddings: List[List[float]] = []
 
-        # 分批处理，避免超出 API 单次请求限制
-        for i in range(0, len(texts), _BATCH_SIZE):
-            batch = texts[i : i + _BATCH_SIZE]
+        # 分批处理，避免超出 API 单次请求限制（用处理后的版本）
+        for i in range(0, len(processed_texts), _BATCH_SIZE):
+            batch = processed_texts[i : i + _BATCH_SIZE]
             batch_embeddings = self._request_embedding(batch)
             all_embeddings.extend(batch_embeddings)
 
@@ -190,7 +212,7 @@ class ZhipuAIEmbeddingFunction:
                 json.JSONDecodeError,
                 KeyError,
             )),
-            before_sleep=before_sleep_log(logger, "WARNING"),
+            before_sleep=before_sleep_log(logger, logging.WARNING),
             reraise=True,  # 重试全部失败后抛出，由上层决定零向量降级
         )
         def _do_request() -> List[List[float]]:

@@ -343,3 +343,6 @@ tests/e2e/test_e2e_pipeline.py
 
 # Performance timing test (temporary verification script)
 tests/perf/test_food_timing.py
+
+# 面试口述稿等个人资料（不上传）
+interview_answers.md

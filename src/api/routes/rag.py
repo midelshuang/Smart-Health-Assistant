@@ -34,12 +34,17 @@ class RAGQueryRequest(BaseModel):
         description="历史对话上下文，格式 [{role: 'user'|'assistant', content: '...'}]",
     )
     stream: bool = Field(default=False, description="是否以流式方式返回结果")
+    # 🆕 前端可显式传 plan_duration（覆盖意图识别器的关键词判断，更可靠）
+    plan_duration: Optional[str] = Field(
+        default=None,
+        description="计划时长: 1_day | 7_days | 30_days（前端升级按钮直接传，避免 LLM 意图识别漏判）",
+    )
 
 
 class RAGQueryResponse(BaseModel):
     """RAG 查询响应体"""
     answer: str = Field(..., description="生成的答案文本")
-    sources: List[Dict[str, str]] = Field(default_factory=list, description="引用来源列表")
+    sources: List[Dict[str, Any]] = Field(default_factory=list, description="引用来源列表")
     answer_source: str = Field(default="knowledge_base", description="答案来源: knowledge_base | llm_generated")
     intent: str = Field(..., description="识别出的意图类型")
     success: bool = Field(default=True, description="请求是否成功")
@@ -48,6 +53,10 @@ class RAGQueryResponse(BaseModel):
     vector_results: Optional[List[Dict[str, Any]]] = Field(default=None, description="向量检索到的文档片段")
     rewrite_count: int = Field(default=0, description="Query 改写次数")
     eval_passed: Optional[bool] = Field(default=None, description="检索评估是否通过")
+    plan_config: Optional[Dict[str, Any]] = Field(default=None, description="生成的饮食计划配置")
+    plan_id: Optional[int] = Field(default=None, description="计划ID")
+    goal_type: Optional[str] = Field(default=None, description="目标类型")
+    message_uuid: Optional[str] = Field(default=None, description="消息UUID（用于反馈系统）")
 
 
 class RAGIndexRequest(BaseModel):
@@ -101,6 +110,8 @@ def execute_rag_query(
 
     游客可问答（无法使用计划生成），登录用户可使用完整功能。
     """
+    import uuid
+
     pipeline = get_pipeline()
     user_id = current_user.external_id if not is_guest(current_user) else "guest"
 
@@ -110,6 +121,7 @@ def execute_rag_query(
             user_id=user_id,
             conversation_context=body.conversation_context,
             stream=False,
+            plan_duration=body.plan_duration,  # 🆕 前端显式时长
         )
 
         if not result.get("success", False):
@@ -118,13 +130,16 @@ def execute_rag_query(
                 detail=result.get("error", "RAG 管道执行失败"),
             )
 
+        # 生成 message_uuid 用于反馈系统
+        result["message_uuid"] = str(uuid.uuid4())
+
         return result
 
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"RAG 查询异常: {e}")
-        raise HTTPException(status_code=500, detail=f"RAG 管道执行异常: {e}")
+        logger.error(f"RAG 查询异常: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="服务内部错误，请稍后重试或联系管理员")
 
 
 @router.post("/query/stream")
@@ -146,8 +161,8 @@ async def execute_rag_query_stream(
             ):
                 yield chunk
         except Exception as e:
-            logger.error(f"流式 RAG 查询异常: {e}")
-            yield {"error": str(e)}
+            logger.error(f"流式 RAG 查询异常: {e}", exc_info=True)
+            yield {"error": "服务内部错误，请稍后重试或联系管理员"}
 
     async def async_gen():
         async for sse_str in stream_with_heartbeat(
@@ -217,8 +232,8 @@ def index_documents(
     except HTTPException:
         raise
     except Exception as e:
-        logger.error(f"文档入库异常: {e}")
-        raise HTTPException(status_code=500, detail=f"文档入库异常: {e}")
+        logger.error(f"文档入库异常: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="文档入库失败，请稍后重试或联系管理员")
 
 
 @router.get("/status", response_model=RAGStatusResponse)
@@ -238,8 +253,8 @@ def get_rag_status():
         status = pipeline.get_status()
         return status
     except Exception as e:
-        logger.error(f"获取 RAG 状态异常: {e}")
-        raise HTTPException(status_code=500, detail=f"获取状态异常: {e}")
+        logger.error(f"获取 RAG 状态异常: {e}", exc_info=True)
+        raise HTTPException(status_code=500, detail="获取状态异常，请稍后重试或联系管理员")
 
 
 # ============================================================

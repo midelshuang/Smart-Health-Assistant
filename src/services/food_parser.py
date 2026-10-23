@@ -191,40 +191,114 @@ def parse_food_intake(text: str) -> Dict[str, Any]:
 
 def match_food_in_db(db: Session, food_name: str, limit: int = 3) -> List[Dict[str, Any]]:
     """
-    在 nutrition_facts 表中模糊匹配食物
-
-    Args:
-        db: 数据库会话
-        food_name: 解析出的食物名
-        limit: 返回数量上限
-
-    Returns:
-        匹配到的食物列表，每项包含 id、food_name、calories_per_100g 等
+    在 nutrition_facts 表中智能匹配食物
+    
+    匹配策略（按优先级）：
+    1. 精确匹配 food_name
+    2. 前缀匹配（如"鸡蛋"匹配"鸡蛋 (代表值)"但排除"鸡蛋黄"）
+    3. aliases 精确匹配（整个别名等于查询词）
+    4. 子串匹配（如"牛奶"匹配"纯牛奶"）
+    5. 同义词扩展匹配
+    6. aliases 包含匹配（最后兜底）
     """
     if not food_name:
         return []
 
-    # 1. 精确匹配
+    # 0. 预定义：需要排除的伪匹配
+    EXCLUDE_RULES = {
+        "面包": ["鱼", "海鲜", "水产"],
+        "鸡蛋": ["蛋白", "蛋黄粉", "粉"],
+    }
+    
+    SYNONYM_MAP = {
+        "牛奶": ["纯牛奶", "鲜牛奶"],
+        "面包": ["全麦面包", "白面包", "吐司"],
+    }
+
+    # 1. 精确匹配 food_name
     exact = db.query(NutritionFact).filter(
         NutritionFact.food_name == food_name
     ).first()
     if exact:
         return [_nutrition_to_dict(exact)]
 
-    # 2. 模糊匹配（包含关系）
-    results = db.query(NutritionFact).filter(
-        NutritionFact.food_name.contains(food_name)
-    ).limit(limit).all()
+    # 2. 前缀匹配：食物名以查询词开头（最高优先级的模糊匹配）
+    prefix_results = db.query(NutritionFact).filter(
+        NutritionFact.food_name.like(f"{food_name}%")
+    ).limit(limit * 2).all()
+    
+    if prefix_results:
+        import re
+        filtered = []
+        exclude_keywords = EXCLUDE_RULES.get(food_name, [])
+        for r in prefix_results:
+            name = r.food_name
+            suffix = name[len(food_name):].strip()
+            if re.match(r'^[\s\(（\[【\d].*', suffix) or suffix == "":
+                if not exclude_keywords or not any(kw in suffix for kw in exclude_keywords):
+                    filtered.append(r)
+                    if len(filtered) >= limit:
+                        break
+        
+        if filtered:
+            return [_nutrition_to_dict(r) for r in filtered]
 
-    if results:
-        return [_nutrition_to_dict(r) for r in results]
+    # 3. aliases 精确匹配（整个别名等于查询词）
+    alias_match = db.query(NutritionFact).filter(
+        NutritionFact.aliases.contains(food_name)
+    ).first()
+    if alias_match:
+        return [_nutrition_to_dict(alias_match)]
 
-    # 3. 反向匹配（食物名包含查询词）
+    # 4. 子串匹配：查询词是食物名的子串（如"牛奶"匹配"纯牛奶"）
+    if food_name not in EXCLUDE_RULES:
+        contains_results = db.query(NutritionFact).filter(
+            NutritionFact.food_name.contains(food_name)
+        ).limit(limit * 3).all()
+        
+        if contains_results:
+            import re
+            filtered = []
+            exclude_keywords = EXCLUDE_RULES.get(food_name, [])
+            for r in contains_results:
+                name = r.food_name
+                if exclude_keywords and any(kw in name for kw in exclude_keywords):
+                    continue
+                idx = name.find(food_name)
+                if idx == -1:
+                    continue
+                prefix_char = name[idx - 1] if idx > 0 else ""
+                common_prefixes = "纯鲜全脱高矮无糖加钙原味"
+                if idx == 0 or prefix_char in common_prefixes or not _is_chinese_char(prefix_char):
+                    filtered.append(r)
+                    if len(filtered) >= limit:
+                        break
+            
+            if filtered:
+                return [_nutrition_to_dict(r) for r in filtered]
+
+    # 5. 同义词扩展匹配
+    synonyms = SYNONYM_MAP.get(food_name, [])
+    for syn in synonyms:
+        syn_results = db.query(NutritionFact).filter(
+            NutritionFact.food_name.like(f"{syn}%")
+        ).limit(limit).all()
+        if syn_results:
+            return [_nutrition_to_dict(r) for r in syn_results]
+
+    # 6. aliases 包含匹配（最后兜底）
     results = db.query(NutritionFact).filter(
         NutritionFact.aliases.contains(food_name)
     ).limit(limit).all()
 
     return [_nutrition_to_dict(r) for r in results]
+
+
+def _is_chinese_char(c: str) -> bool:
+    """判断是否为中文字符"""
+    if not c:
+        return False
+    return '\u4e00' <= c <= '\u9fff'
 
 
 def _nutrition_to_dict(n: NutritionFact) -> Dict[str, Any]:

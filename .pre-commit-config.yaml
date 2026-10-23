@@ -1,0 +1,56 @@
+# Pre-commit hooks 配置
+# 用法：
+#   pip install pre-commit
+#   pre-commit install
+#   pre-commit run --all-files  # 首次手动跑一遍
+
+repos:
+  # 基础代码规范
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: end-of-file-fixer       # 文件末尾换行
+        exclude: ^docs/.*\.md$
+      - id: trailing-whitespace      # 去除行尾空格
+        exclude: ^docs/.*\.md$
+      - id: check-yaml               # YAML 语法校验
+        files: \.(yaml|yml)$
+      - id: check-toml               # TOML 语法校验
+      - id: check-json               # JSON 语法校验
+        exclude: ^package(-lock)?\.json$
+      - id: check-merge-conflict     # 阻止有冲突标记的提交
+      - id: check-added-large-files  # 阻止大文件（>500KB）
+        args: ['--maxkb=500']
+      - id: debug-statements         # 阻止 pdb / breakpoint 残留
+      - id: detect-private-key       # 阻止私钥提交
+      - id: check-case-conflict      # 阻止大小写冲突的文件名（macOS/Windows）
+
+  # Python 代码规范（Ruff 整合了 pyflakes/pylint/isort/flake8-*)
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: [--fix, --exit-non-zero-on-fix]
+        # 首次启用：先只做 import 排序与 F401（未使用导入）
+        # 后续逐步加入 E501（行长）、B（常见 bug）、C4（comprehension）
+        files: ^src/|^tests/
+      - id: ruff-format
+        files: ^src/|^tests/
+
+  # 密钥泄漏扫描
+  - repo: https://github.com/Yelp/detect-secrets
+    rev: v1.5.0
+    hooks:
+      - id: detect-secrets
+        args: ['--baseline', '.secrets.baseline']
+        exclude: |
+          (?x)^(
+            \.env\.example|
+            \.github/.*|
+            tests/.*|
+            docs/.*\.md
+          )$
+
+# 全局配置
+default_language_version:
+  python: python3.11
