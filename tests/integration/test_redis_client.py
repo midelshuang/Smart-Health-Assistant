@@ -23,6 +23,23 @@ from src.utils.redis_client import (
 )
 
 
+@pytest.fixture(autouse=True)
+def _restore_singleton_state():
+    """每个测试前后快照/恢复 RedisClient 单例内部状态。
+
+    背景：单例是全局共享的，部分测试会把 _client 换成 MagicMock
+    或强制 _available，若不还原会污染后续测试（如 auth 黑名单检查）。
+    """
+    client = get_redis_client()
+    saved = (
+        getattr(client, "_client", None),
+        getattr(client, "_available", None),
+        getattr(client, "_last_check_ts", None),
+    )
+    yield
+    client._client, client._available, client._last_check_ts = saved
+
+
 class TestBuildKey:
     """build_key 构造"""
 

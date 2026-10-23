@@ -61,11 +61,15 @@ class _MemoryStore:
     def is_locked(self, key: str) -> Tuple[bool, int]:
         if key not in self._locks:
             return False, 0
-        remain = int(self._locks[key] - time.time())
-        if remain <= 0:
+        now = time.time()
+        remain_exact = self._locks[key] - now
+        # 用 ceil 而非 int 截断：剩余 0.9s 也应视为还锁着 1 秒
+        # （int() 截断会把 0.9s 判成已过期，短锁在 Linux 高精度时钟下必失效）
+        if remain_exact <= 0:
             del self._locks[key]
             return False, 0
-        return True, remain
+        import math
+        return True, max(1, int(math.ceil(remain_exact)))
 
     def clear(self, key: str):
         self._fails.pop(key, None)
