@@ -510,3 +510,81 @@ DO $$ BEGIN
         CREATE INDEX idx_user_profiles_visibility ON user_profiles(visibility);
     END IF;
 END $$;
+
+-- ==========================================================
+-- V4 Schema 同步段（幂等）
+-- 作用: 让 init.sql 与 src/models/db_models.py 的 V4 预留字段保持一致
+-- 约束: 必须放在文件末尾（所有表已建好）；全部使用 ADD COLUMN IF NOT EXISTS
+-- ==========================================================
+
+-- authoritative_sources（信源可信度）
+ALTER TABLE authoritative_sources ADD COLUMN IF NOT EXISTS credibility_score NUMERIC(3,2);
+ALTER TABLE authoritative_sources ADD COLUMN IF NOT EXISTS reviewed_by VARCHAR(64);
+ALTER TABLE authoritative_sources ADD COLUMN IF NOT EXISTS reviewed_at TIMESTAMP WITH TIME ZONE;
+
+-- users（会员体系）
+ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_tier VARCHAR(20) DEFAULT 'free';
+ALTER TABLE users ADD COLUMN IF NOT EXISTS membership_expires_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS last_active_at TIMESTAMP WITH TIME ZONE;
+ALTER TABLE users ADD COLUMN IF NOT EXISTS device_info JSONB;
+
+-- user_profiles（画像增强）
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS dietary_preference JSONB;
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS metabolic_data JSONB;
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS medical_conditions JSONB;
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS target_heart_rate INTEGER;
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS recommended_daily_water INTEGER;
+ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS profile_version INTEGER DEFAULT 1;
+
+-- daily_diet_logs（AI 解析增强）
+ALTER TABLE daily_diet_logs ADD COLUMN IF NOT EXISTS actual_macros JSONB;
+ALTER TABLE daily_diet_logs ADD COLUMN IF NOT EXISTS meal_photo_url VARCHAR(500);
+ALTER TABLE daily_diet_logs ADD COLUMN IF NOT EXISTS confidence_score NUMERIC(3,2);
+ALTER TABLE daily_diet_logs ADD COLUMN IF NOT EXISTS parse_model_version VARCHAR(20);
+
+-- chat_histories（调用成本追踪）
+ALTER TABLE chat_histories ADD COLUMN IF NOT EXISTS tokens_used INTEGER;
+ALTER TABLE chat_histories ADD COLUMN IF NOT EXISTS cost_usd NUMERIC(10,6);
+ALTER TABLE chat_histories ADD COLUMN IF NOT EXISTS response_time_ms INTEGER;
+ALTER TABLE chat_histories ADD COLUMN IF NOT EXISTS user_feedback_score INTEGER;
+ALTER TABLE chat_histories ADD COLUMN IF NOT EXISTS attachments JSONB;
+
+-- user_feedbacks
+ALTER TABLE user_feedbacks ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE user_feedbacks ADD COLUMN IF NOT EXISTS used_for_training BOOLEAN DEFAULT FALSE;
+
+-- nutrition_facts（食物画像）
+ALTER TABLE nutrition_facts ADD COLUMN IF NOT EXISTS food_image_url VARCHAR(500);
+ALTER TABLE nutrition_facts ADD COLUMN IF NOT EXISTS glycemic_load NUMERIC(5,2);
+ALTER TABLE nutrition_facts ADD COLUMN IF NOT EXISTS satiety_index NUMERIC(5,2);
+ALTER TABLE nutrition_facts ADD COLUMN IF NOT EXISTS region_tags JSONB;
+ALTER TABLE nutrition_facts ADD COLUMN IF NOT EXISTS verified BOOLEAN DEFAULT FALSE;
+ALTER TABLE nutrition_facts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+-- glycemic_index_facts（GI 精细化）
+ALTER TABLE glycemic_index_facts ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE glycemic_index_facts ADD COLUMN IF NOT EXISTS gi_category VARCHAR(20);
+ALTER TABLE glycemic_index_facts ADD COLUMN IF NOT EXISTS glucose_response JSONB;
+
+-- fitness_goals（目标跟踪增强）
+ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS progress_history JSONB;
+ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS ai_adjustment_suggestion TEXT;
+ALTER TABLE fitness_goals ADD COLUMN IF NOT EXISTS completion_rate NUMERIC(5,2);
+
+-- plans（计划版本链）
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS plan_version INTEGER DEFAULT 1;
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS parent_plan_id BIGINT;
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS adjustment_history JSONB;
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS ai_generated BOOLEAN DEFAULT FALSE;
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS generation_prompt TEXT;
+ALTER TABLE plans ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
+
+-- plan_checkins（打卡多维数据）
+ALTER TABLE plan_checkins ADD COLUMN IF NOT EXISTS actual_macros JSONB;
+ALTER TABLE plan_checkins ADD COLUMN IF NOT EXISTS mood_score INTEGER;
+ALTER TABLE plan_checkins ADD COLUMN IF NOT EXISTS energy_level INTEGER;
+ALTER TABLE plan_checkins ADD COLUMN IF NOT EXISTS sleep_hours NUMERIC(4,2);
+ALTER TABLE plan_checkins ADD COLUMN IF NOT EXISTS weight_snapshot NUMERIC(5,2);
+ALTER TABLE plan_checkins ADD COLUMN IF NOT EXISTS updated_at TIMESTAMP WITH TIME ZONE DEFAULT CURRENT_TIMESTAMP;
