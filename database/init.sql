@@ -74,6 +74,9 @@ CREATE TABLE IF NOT EXISTS nutrition_facts (
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
 );
 
+-- V4: 食物图片URL（模型 db_models.py 有此列，旧库补列用）
+ALTER TABLE nutrition_facts ADD COLUMN IF NOT EXISTS food_image_url VARCHAR(500);
+
 COMMENT ON TABLE nutrition_facts IS '结构化数据层：精准计算餐食营养信息';
 COMMENT ON COLUMN nutrition_facts.id IS '食物唯一标识';
 COMMENT ON COLUMN nutrition_facts.food_name IS '标准食物名称';
@@ -183,10 +186,7 @@ COMMENT ON COLUMN user_profiles.expert_verified_at IS 'V4预留: 专家认证通
 -- 1. 确保 user_profiles 表里有 user_id 字段（如果没有就加上）
 ALTER TABLE user_profiles ADD COLUMN IF NOT EXISTS user_id VARCHAR(50);
 
--- 2. 添加外键约束（关键！）
-ALTER TABLE user_profiles
-ADD CONSTRAINT fk_user_profile_user
-FOREIGN KEY (user_id) REFERENCES users(external_id);
+-- 2. 外键约束已移至 users 表建表之后（原位置在 users 建表前，全新库会报错）
 
 -- ==========================================================
 -- 5. 每日饮食记录表 (daily_diet_logs) [新增核心表]
@@ -407,6 +407,16 @@ COMMENT ON COLUMN users.last_login_at IS '最后登录时间（用于安全审�
 COMMENT ON COLUMN users.last_login_ip IS '最后登录 IP（用于安全审计）';
 COMMENT ON COLUMN users.security_question IS '安全问题（用于忘记密码重置）';
 COMMENT ON COLUMN users.security_answer_hash IS '安全问题答案哈希';
+
+-- user_profiles.user_id → users.external_id 外键（必须在 users 表建好后执行）
+-- 原先此块位于 users 建表之前，导致全新库执行时报 relation "users" does not exist
+DO $$ BEGIN
+    IF NOT EXISTS (SELECT 1 FROM pg_constraint WHERE conname = 'fk_user_profile_user') THEN
+        ALTER TABLE user_profiles
+        ADD CONSTRAINT fk_user_profile_user
+        FOREIGN KEY (user_id) REFERENCES users(external_id);
+    END IF;
+END $$;
 
 -- ==========================================================
 -- 10. 个性化计划表 (plans)
