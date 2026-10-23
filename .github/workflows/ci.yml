@@ -40,6 +40,10 @@ jobs:
           --health-timeout=5s
           --health-retries=5
 
+      chroma:
+        image: chromadb/chroma:latest
+        ports: ['8001:8000']
+
     env:
       DATABASE_URL: postgresql://postgres:postgres@localhost:5432/healthai_test
       REDIS_HOST: localhost
@@ -81,16 +85,34 @@ jobs:
         # 暂不强制 strict，先看清单
         continue-on-error: true
 
+      - name: Initialize database schema
+        run: |
+          PGPASSWORD=postgres psql -h localhost -U postgres -d healthai_test -f database/init.sql
+
+      - name: Wait for ChromaDB
+        run: |
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8001/api/v2/heartbeat >/dev/null \
+               || curl -sf http://localhost:8001/api/v1/heartbeat >/dev/null; then
+              echo "ChromaDB ready"; exit 0
+            fi
+            sleep 2
+          done
+          echo "ChromaDB not ready after 60s"; exit 1
+
       - name: Run tests with coverage
         env:
           PYTEST_MARKERS: "not slow and not perf"
         run: |
           pytest \
+            --ignore=tests/e2e \
+            --ignore=tests/perf \
             --cov=src \
             --cov-report=term-missing \
             --cov-report=xml:coverage.xml \
             --cov-fail-under=40 \
             -m "${PYTEST_MARKERS}"
+        # e2e/perf 需要完整真实服务栈（API 服务、真实 LLM、已入库数据），仅在本地/nightly 跑
         # 首次启用：阈值设为 40%，避免直接卡 80% 阻断流水线；后续逐步提升
 
       - name: Upload coverage artifact
