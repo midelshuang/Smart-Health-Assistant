@@ -1061,6 +1061,22 @@ def generate_plan(
         }
 
     # 6. 持久化到数据库（如果用户存在）
+    # R08：解析失败的兜底结构不允许落库为 active——垃圾计划不能占用
+    # 用户的 active 计划位（签到/升级等都挂在 active 计划上）
+    if _is_fallback_plan(plan_config):
+        logger.error(
+            f"计划 JSON 解析失败（返回兜底结构），跳过落库: user_id={user_id}")
+        return {
+            "success": True,
+            "plan_id": None,
+            "config": plan_config,
+            "goal_type": goal_type,
+            "plan_duration": plan_duration,
+            "start_date": str(start_date or date.today()),
+            "end_date": str(end_date) if end_date else None,
+            "parse_failed": True,
+        }
+
     try:
         from src.models.db_models import User
         user_exists = db.query(User).filter(User.external_id == user_id).first()
@@ -1154,6 +1170,19 @@ def update_plan_config(
     ).first()
     if not plan:
         return {"success": False, "error": f"未找到计划 {plan_id}"}
+
+    # R01：换菜/编辑后强制校验——过敏原/疾病禁忌命中则拒绝保存，
+    # 原 config 保持不变（前端展示的还是原菜，即"失败回退原菜"）
+    is_safe, risk_messages, _foods = _validate_plan_config_foods(db, user_id, config)
+    if not is_safe:
+        return {
+            "success": False,
+            "error": "计划包含过敏/禁忌食物，已保留原计划",
+            "risks": risk_messages,
+        }
+
+    # R01：换菜后重算每餐/每日热量汇总
+    _recalc_plan_calories(config)
 
     plan.config = config
     db.commit()
@@ -1286,6 +1315,138 @@ def _plan_to_dict(plan: Plan) -> Dict[str, Any]:
     }
 
 
+# ============================================================
+# R01：计划写路径强制安全校验（换菜/编辑/手动保存）
+# ============================================================
+# 过敏史自由文本 → food_validator 过敏原键 的映射提示词
+_ALLERGEN_TEXT_HINTS: Dict[str, tuple] = {
+    "milk": ("牛奶", "乳糖", "奶制品", "乳制品", "羊奶", "奶油"),
+    "eggs": ("鸡蛋", "蛋类", "蛋清", "蛋黄"),
+    "peanut": ("花生",),
+    "nuts": ("坚果", "核桃", "杏仁", "腰果", "榛子"),
+    "seafood": ("海鲜", "虾", "蟹", "鱼", "贝类", "蛤", "蚝"),
+    "gluten": ("麸质", "小麦", "面粉", "面筋"),
+    "soy": ("大豆", "黄豆", "豆腐"),
+}
+
+# 健康标签/疾病文本 → food_validator 疾病键 的映射提示词
+_DISEASE_TEXT_HINTS: Dict[str, tuple] = {
+    "diabetes": ("糖尿病", "血糖高", "高血糖"),
+    "hypertension": ("高血压",),
+    "hyperlipidemia": ("高血脂", "血脂异常", "高胆固醇"),
+    "fatty_liver": ("脂肪肝",),
+    "gout": ("痛风", "高尿酸"),
+}
+
+
+def _extract_plan_foods(config: Dict[str, Any]) -> List[str]:
+    """从 plan_config.days[].meals[].items[] 中提取全部食物名"""
+    foods: List[str] = []
+    for day in (config.get("days") or []):
+        if not isinstance(day, dict):
+            continue
+        for meal in (day.get("meals") or []):
+            if not isinstance(meal, dict):
+                continue
+            for item in (meal.get("items") or []):
+                if isinstance(item, dict) and item.get("food"):
+                    foods.append(str(item["food"]))
+    return foods
+
+
+def _profile_to_validator_profile(profile: Dict[str, Any]) -> Dict[str, Any]:
+    """把 get_user_profile_dict 的档案字典适配为 food_validator 需要的结构"""
+    allergies_text = str(profile.get("allergies") or "")
+    tags = profile.get("health_tags") or []
+    tag_text = " ".join(str(t) for t in tags if t)
+
+    allergens = [
+        key for key, hints in _ALLERGEN_TEXT_HINTS.items()
+        if any(h in allergies_text for h in hints)
+    ]
+    diseases = [
+        key for key, hints in _DISEASE_TEXT_HINTS.items()
+        if any(h in tag_text for h in hints)
+    ]
+    return {"allergens": allergens, "diseases": diseases, "medications": []}
+
+
+def _validate_plan_config_foods(
+    db: Session,
+    user_id: str,
+    config: Dict[str, Any],
+) -> tuple:
+    """
+    对计划 config 里的全部食物做过敏原/疾病禁忌/药物相互作用校验（R01）
+
+    Returns:
+        (is_safe, risk_messages, foods)
+        - is_safe: False 时调用方必须拒绝保存（原计划保持不变 = 回退原菜）
+        - risk_messages: 人类可读的风险描述列表
+    """
+    from src.utils.food_validator import validate_food_for_user
+
+    foods = _extract_plan_foods(config)
+    if not foods:
+        return True, [], foods
+
+    profile = get_user_profile_dict(db, user_id)
+    if not profile:
+        # 无档案无法校验 → 放行（保持可用性），不阻塞正常保存
+        logger.info(f"用户 {user_id} 无档案，跳过计划食物校验")
+        return True, [], foods
+
+    result = validate_food_for_user(foods, _profile_to_validator_profile(profile))
+    is_safe = result.get("is_safe", True)
+    risk_messages = [r.get("message", "") for r in result.get("all_risks", []) if r.get("message")]
+    if not is_safe:
+        logger.warning(
+            f"计划食物校验未通过: user={user_id}, risks={risk_messages[:5]}")
+    return is_safe, risk_messages, foods
+
+
+def _recalc_plan_calories(config: Dict[str, Any]) -> None:
+    """
+    换菜/编辑后重算每餐与每日热量汇总（就地修改 config）
+
+    前端聊天表格读取 meal.total_calories，计划详情读取 day.total_calories。
+    仅在存在数值型 item.calories 时重算，避免覆盖 LLM 给出的可信汇总。
+    """
+    for day in (config.get("days") or []):
+        if not isinstance(day, dict):
+            continue
+        day_total = 0.0
+        day_has_value = False
+        for meal in (day.get("meals") or []):
+            if not isinstance(meal, dict):
+                continue
+            meal_total = 0.0
+            meal_has_value = False
+            for item in (meal.get("items") or []):
+                if isinstance(item, dict) and isinstance(item.get("calories"), (int, float)):
+                    meal_total += float(item["calories"])
+                    meal_has_value = True
+            if meal_has_value:
+                meal["total_calories"] = round(meal_total, 1)
+                day_total += meal_total
+                day_has_value = True
+        if day_has_value:
+            day["total_calories"] = round(day_total, 1)
+
+
+def _is_fallback_plan(plan_config: Dict[str, Any]) -> bool:
+    """检测 plan_config 是否为解析失败的兜底结构（_fallback_plan_structure 产物，R08）"""
+    days = plan_config.get("days") or []
+    if not days:
+        return True
+    labels = [
+        str(d.get("day_label") or "")
+        for d in days
+        if isinstance(d, dict)
+    ]
+    return bool(labels) and all("解析兜底" in lb for lb in labels)
+
+
 def save_plan_config(
     db: Session,
     user_id: str,
@@ -1299,6 +1460,17 @@ def save_plan_config(
     前端拿到 config 后调此接口兜底保存。
     """
     try:
+        # R01：手动保存同样强制安全校验（LLM 生成结果可能含用户过敏原）
+        is_safe, risk_messages, _foods = _validate_plan_config_foods(db, user_id, config)
+        if not is_safe:
+            return {
+                "success": False,
+                "error": "计划包含过敏/禁忌食物，保存被拒绝",
+                "risks": risk_messages,
+            }
+
+        _recalc_plan_calories(config)
+
         new_plan = Plan(
             user_id=user_id,
             goal_type=goal_type,

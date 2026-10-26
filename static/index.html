@@ -1,4 +1,4 @@
-﻿﻿<!doctype html>
+﻿<!doctype html>
 <html lang="zh-CN">
   <head>
     <meta charset="UTF-8" />
@@ -2512,7 +2512,7 @@
             cfg.duration_hint || "7_days", // 第5个：planDuration
             cfg.source_guidelines || cfg.guideline_titles || "", // 第6个
           );
-          appendChat("bot", planHtml, { messageUuid });
+          appendChat("bot", planHtml, { messageUuid, raw: true });
           showToast(`✅ 已加载计划 #${planId}`);
         } else {
           showToast(
@@ -3388,7 +3388,10 @@
         const box = document.getElementById("chatBox");
         const msg = document.createElement("div");
         msg.className = `chat-msg ${role}`;
-        let html = `<div class="role">${role === "user" ? "你" : "AI 助手"}</div>${text}`;
+        // R05 安全修复：默认按纯文本转义（用户输入/服务端回答都可能携带 HTML），
+        // 受信任的自构 HTML（计划表格/加载动画）需显式传 extra.raw = true
+        const safeText = extra.raw === true ? text : escapeHtml(text);
+        let html = `<div class="role">${role === "user" ? "你" : "AI 助手"}</div>${safeText}`;
 
         // bot 消息添加反馈按钮（点/踩）
         if (role === "bot" && extra.messageUuid) {
@@ -3441,7 +3444,9 @@
         if (!query) return;
         appendChat("user", query);
         document.getElementById("ragQuery").value = "";
-        appendChat("bot", '<span class="loading"></span>正在思考...');
+        appendChat("bot", '<span class="loading"></span>正在思考...', {
+          raw: true,
+        });
 
         // 构建对话上下文（限制最近20条消息，避免token过多）
         const contextForApi = conversationContext.slice(-20);
@@ -3487,7 +3492,7 @@
                 r.data.plan_config?.duration_hint ||
                 "1_day",
             );
-            appendChat("bot", planHtml, { messageUuid });
+            appendChat("bot", planHtml, { messageUuid, raw: true });
           } else {
             appendChat("bot", r.data.answer, { messageUuid });
           }
@@ -4364,13 +4369,21 @@
         title.textContent = sourceName;
 
         try {
-          const resp = await fetch(
+          // R04：chunk 接口需登录（带 token），游客提示先登录
+          const resp = await apiCall(
+            "GET",
             `/api/v1/rag/chunk/${encodeURIComponent(chunkId)}`,
           );
           if (!resp.ok) {
+            if (resp.status === 401) {
+              body.className = "source-modal-body";
+              body.textContent = "请先登录后查看文档溯源";
+              tag.textContent = "提示";
+              return;
+            }
             throw new Error(`HTTP ${resp.status}`);
           }
-          const data = await resp.json();
+          const data = resp.data;
           renderChunkDetail(data, source, index);
         } catch (err) {
           body.className = "source-modal-body error";

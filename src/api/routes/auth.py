@@ -332,12 +332,13 @@ def login(body: LoginRequest, request: Request, db: Session = Depends(get_db)):
     access_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     refresh_expires = timedelta(days=RTD)
 
+    # R09：JWT 携带会话版本声明，改密后旧 token 失效
     access_token = create_access_token(
-        data={"sub": user.external_id},
+        data={"sub": user.external_id, "ver": user.session_version or 0},
         expires_delta=access_expires,
     )
     refresh_token = create_refresh_token(
-        data={"sub": user.external_id},
+        data={"sub": user.external_id, "ver": user.session_version or 0},
         expires_delta=refresh_expires,
     )
 
@@ -375,12 +376,13 @@ def refresh_token(body: RefreshRequest, db: Session = Depends(get_db)):
     access_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
     refresh_expires = timedelta(days=RTD)
 
+    # R09：新 token 携带当前会话版本
     new_access = create_access_token(
-        data={"sub": user.external_id},
+        data={"sub": user.external_id, "ver": user.session_version or 0},
         expires_delta=access_expires,
     )
     new_refresh = create_refresh_token(
-        data={"sub": user.external_id},
+        data={"sub": user.external_id, "ver": user.session_version or 0},
         expires_delta=refresh_expires,
     )
 

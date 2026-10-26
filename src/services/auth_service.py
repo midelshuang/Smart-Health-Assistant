@@ -253,6 +253,27 @@ def verify_refresh_token(token: str) -> str:
 
 
 # ============================================================
+# R09：会话版本校验（改密/重置密码后旧 JWT 全部失效）
+# ============================================================
+def _verify_session_version(payload: dict, user) -> bool:
+    """校验 JWT 中的 ver 声明是否与用户当前 session_version 一致
+
+    - 改密/重置密码后 session_version 自增，旧 token 的 ver 落后 → 失效
+    - 未带 ver 的历史 token 视为 ver=0（与未改过密码的用户 session_version=0
+      匹配，升级部署后未改密用户不会被强制重新登录）
+
+    Returns:
+        True 版本匹配，False 已失效
+    """
+    try:
+        token_ver = int(payload.get("ver") or 0)
+    except (TypeError, ValueError):
+        token_ver = 0
+    user_ver = int(getattr(user, "session_version", 0) or 0)
+    return token_ver == user_ver
+
+
+# ============================================================
 # 用户认证
 # ============================================================
 def authenticate_user(db: Session, login_key: str, password: str):
@@ -322,6 +343,10 @@ def get_current_user_id(
     if not user:
         raise credentials_exception
 
+    # R09：改密后 session_version 自增，旧 token ver 不匹配 → 失效
+    if not _verify_session_version(payload, user):
+        raise revoked_exception
+
     return user.external_id
 
 
@@ -354,6 +379,10 @@ def get_current_user_optional(
     ).first()
 
     if not user:
+        return guest
+
+    # R09：改密后旧 token 视为未登录（回到游客态）
+    if not _verify_session_version(payload, user):
         return guest
 
     return user
@@ -416,6 +445,14 @@ def require_role(*allowed_roles: str):
                 detail="用户不存在",
             )
 
+        # R09：改密后旧 token 失效
+        if not _verify_session_version(payload, user):
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="登录态已失效，请重新登录",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+
         user_level = ROLE_HIERARCHY.get(user.role, 0)
         if user_level < min_level:
             raise HTTPException(
@@ -451,8 +488,11 @@ def change_password(db: Session, user: User, old_password: str, new_password: st
     if old_password == new_password:
         raise ValueError("新密码不能与旧密码相同")
     user.password_hash = hash_password(new_password)
+    # R09：会话版本 +1，使该用户所有旧 JWT（access/refresh）失效
+    user.session_version = (user.session_version or 0) + 1
     db.commit()
-    logger.info(f"用户 {user.external_id} 修改密码成功")
+    logger.info(
+        f"用户 {user.external_id} 修改密码成功, session_version={user.session_version}")
     return True
 
 
@@ -488,6 +528,10 @@ def reset_password_via_security(
         return False
 
     user.password_hash = hash_password(new_password)
+    # R09：会话版本 +1，使该用户所有旧 JWT（access/refresh）失效
+    user.session_version = (user.session_version or 0) + 1
     db.commit()
-    logger.info(f"用户 {user.external_id} 通过安全问题重置密码成功")
+    logger.info(
+        f"用户 {user.external_id} 通过安全问题重置密码成功, "
+        f"session_version={user.session_version}")
     return True

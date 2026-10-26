@@ -338,6 +338,15 @@ def set_cached_plan(
 # 6. 安全护栏 LLM 判断缓存
 # ============================================================
 
+def _safety_rules_version() -> str:
+    """读取当前安全规则版本号（缓存键组成部分，规则热更新后旧缓存自动作废）"""
+    try:
+        from src.config.safety_rule_loader import get_safety_rules
+        return str(get_safety_rules().version)
+    except Exception:
+        return "unknown"
+
+
 def get_cached_safety(user_query: str) -> Optional[Dict[str, Any]]:
     """读取安全护栏判断缓存（避免相同查询重复调用 LLM）"""
     client = get_redis_client()
@@ -345,7 +354,11 @@ def get_cached_safety(user_query: str) -> Optional[Dict[str, Any]]:
         _record_cache("safety", hit=False)
         return None
 
-    key = build_key(KEY_PREFIX_SAFETY, _hash_text(_normalize_query(user_query)))
+    key = build_key(
+        KEY_PREFIX_SAFETY,
+        _safety_rules_version(),
+        _hash_text(_normalize_query(user_query)),
+    )
     cached = client.get_json(key)
     if cached:
         logger.debug(f"安全判断缓存命中: query='{user_query[:30]}'")
@@ -361,7 +374,11 @@ def set_cached_safety(user_query: str, result: Dict[str, Any]) -> bool:
     if not client.is_available():
         return False
 
-    key = build_key(KEY_PREFIX_SAFETY, _hash_text(_normalize_query(user_query)))
+    key = build_key(
+        KEY_PREFIX_SAFETY,
+        _safety_rules_version(),
+        _hash_text(_normalize_query(user_query)),
+    )
     return client.set_json(key, result, KEY_TTL_SAFETY)
 
 

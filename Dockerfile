@@ -52,7 +52,11 @@ RUN groupadd -r healthai && useradd -r -g healthai -d /app healthai
 WORKDIR /app
 
 # 复制依赖（从 builder 阶段）
-COPY --from=builder /install /usr/local/lib/python3.11/site-packages
+# R06 修复：pip --prefix 的安装布局是 lib/pythonX.Y/site-packages，
+# 原来直接 COPY /install 会导致 site-packages 路径错位、依赖全部丢失；
+# uvicorn 等控制台脚本在 /install/bin，必须一并复制否则 CMD 启动失败
+COPY --from=builder /install/lib/python3.11/site-packages /usr/local/lib/python3.11/site-packages
+COPY --from=builder /install/bin /usr/local/bin
 
 # 复制应用代码
 COPY --chown=healthai:healthai . /app/

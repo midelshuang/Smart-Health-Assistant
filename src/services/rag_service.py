@@ -149,7 +149,10 @@ class RAGPipeline:
 
         # 🆕 仅在无上下文时写入缓存（多轮对话结果依赖上下文，不宜缓存）
         # 计划生成结果不缓存（plan_id 依赖用户登录状态，缓存会导致 plan_id 丢失）
-        if not has_context and not response.get("plan_config"):
+        # R02：安全拦截结果不缓存（intent=blocked），否则规则热更新后
+        # 旧的拦截/放行结果仍会绕过安全节点直接返回
+        if (not has_context and not response.get("plan_config")
+                and response.get("intent") != "blocked"):
             try:
                 from src.services.cache_service import set_cached_query
                 set_cached_query(user_query, response, user_id)
@@ -211,6 +214,32 @@ class RAGPipeline:
             # 1. 同步执行 RAG 流程（stream_mode=True 时 generator_node 跳过 LLM 调用）
             from src.core.nodes import SYSTEM_PROMPT_KB
             result = self._graph.invoke(initial_state)
+
+            # 🆕 R03 安全终态优先：被安全护栏拦截的查询直接返回拒绝文案，
+            #    绝不进入流式模型生成（否则流式路径会绕过非流式路径的安全检查）
+            if result.get("safety_blocked", False):
+                refusal = result.get("generated_answer") or (
+                    "抱歉，您的提问涉及医疗安全风险，我无法提供回答。"
+                    "如有健康问题请咨询医生或临床营养师。"
+                )
+                logger.warning(
+                    "流式路径命中安全拦截，直接返回拒绝文案: category=%s",
+                    result.get("safety_category", "unknown"),
+                )
+                yield {"type": "sources", "data": result.get("sources", [])}
+                yield {"type": "content", "data": refusal}
+                yield {
+                    "type": "done",
+                    "data": {
+                        "answer": refusal,
+                        "sources": [],
+                        "answer_source": "safety_guard",
+                        "intent": "blocked",
+                        "safety_blocked": True,
+                        "success": True,
+                    },
+                }
+                return
 
             sources = result.get("sources", [])
             prompt = result.get("_stream_prompt", "")

@@ -8,13 +8,15 @@ RAG 检索增强生成 API 路由
 4. GET  /rag/status       —— 查询管道运行状态（LLM / ChromaDB 连通性）
 """
 
+import os
+
 from fastapi import APIRouter, HTTPException, Depends, Request
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
 from fastapi.responses import StreamingResponse
 
 from src.services.rag_service import RAGPipeline
-from src.services.auth_service import get_current_user_optional, is_guest
+from src.services.auth_service import get_current_user_optional, is_guest, require_role
 from src.api.streaming import stream_with_heartbeat, get_sse_headers
 from src.utils.logger import setup_logger
 
@@ -207,13 +209,38 @@ async def rag_chat_stream(
     )
 
 
+# R04：允许入库的目录白名单（仅项目内置数据目录，防止任意目录读取/投毒）
+def _resolve_index_roots() -> List[str]:
+    from src.config import settings
+    return [os.path.realpath(settings.Authoritative_file_path)]
+
+
+def _is_path_allowed(target: str, roots: List[str]) -> bool:
+    """目标路径必须等于某个白名单根或位于其内部（realpath 归一化，防 ../ 穿越）"""
+    for root in roots:
+        if target == root or target.startswith(root + os.sep):
+            return True
+    return False
+
+
 @router.post("/index", response_model=RAGIndexResponse)
 def index_documents(
     body: RAGIndexRequest,
-    current_user=Depends(get_current_user_optional),
+    current_user=Depends(require_role("admin")),
 ):
-    if is_guest(current_user):
-        raise HTTPException(status_code=401, detail="请先登录后使用此功能")
+    # R04：目录白名单校验（未显式传 dir_path 时使用默认数据目录，天然在白名单内）
+    if body.dir_path:
+        target = os.path.realpath(body.dir_path)
+        if not _is_path_allowed(target, _resolve_index_roots()):
+            logger.warning(
+                "目录白名单拦截: user=%s, dir=%s",
+                getattr(current_user, "username", "?"),
+                body.dir_path,
+            )
+            raise HTTPException(
+                status_code=403,
+                detail="仅允许对系统数据目录执行文档入库",
+            )
 
     try:
         result = get_pipeline().index_documents(
@@ -275,13 +302,21 @@ class ChunkDetailResponse(BaseModel):
 
 
 @router.get("/chunk/{chunk_id}", response_model=ChunkDetailResponse)
-def get_chunk_detail(chunk_id: str):
+def get_chunk_detail(
+    chunk_id: str,
+    current_user=Depends(get_current_user_optional),
+):
     """
     根据 chunk_id 获取原文档片段详情
 
     用于文档溯源：用户点击引用来源时，调用此接口查看完整的原文档片段。
     同时查询 ChromaDB 和 PostgreSQL，优先返回内容更完整的来源。
+
+    R04：chunk_id 形如 guideline_0 可枚举，游客不可访问（防知识库未认证批量拉取）
     """
+    if is_guest(current_user):
+        raise HTTPException(status_code=401, detail="请先登录后查看文档溯源")
+
     # 1. 先查 PostgreSQL（content 字段不截断）
     try:
         from src.repositories.session import SessionLocal

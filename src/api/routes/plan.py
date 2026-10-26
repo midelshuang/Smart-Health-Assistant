@@ -134,7 +134,12 @@ def save_plan_config_api(
             config=body.config,
         )
         if not result.get("success", False):
-            raise HTTPException(status_code=400, detail=result.get("error", "保存失败"))
+            # R01：校验未通过（含风险明细）时把风险带给前端
+            detail = result.get("error", "保存失败")
+            risks = result.get("risks") or []
+            if risks:
+                detail = f"{detail}：" + "；".join(risks)
+            raise HTTPException(status_code=400, detail=detail)
         return result
     except HTTPException:
         raise
@@ -184,7 +189,13 @@ def update_plan(
     """
     result = update_plan_config(db=db, user_id=current_user_id, plan_id=plan_id, config=body.config)
     if not result.get("success", False):
-        raise HTTPException(status_code=404, detail=result.get("error", "计划不存在"))
+        # R01：校验未通过（含风险明细）→ 400；计划不存在 → 404
+        detail = result.get("error", "计划不存在")
+        risks = result.get("risks") or []
+        if risks:
+            detail = f"{detail}：" + "；".join(risks)
+            raise HTTPException(status_code=400, detail=detail)
+        raise HTTPException(status_code=404, detail=detail)
     return result
 
 

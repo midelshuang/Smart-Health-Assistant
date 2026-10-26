@@ -62,6 +62,27 @@ def create_diet_log(
     )
 
 # ==========================================
+# 🆕 每日饮食汇总查询接口
+# ⚠️ 必须注册在 /{log_id} 之前：FastAPI 按注册顺序匹配，
+#    否则 GET /diet/summary 会被 /{log_id} 截获导致 422
+# ==========================================
+
+@router.get("/summary")
+def get_daily_summary(
+    log_date: Optional[date_type] = Query(default=None, description="查询日期，默认今天，格式 YYYY-MM-DD"),
+    db: Session = Depends(get_db),
+    current_user_id: str = Depends(get_current_user_id),
+):
+    """
+    查询用户某天的饮食汇总（按餐次分组 + 总热量/营养）
+
+    用于前端饮食看板展示。
+    """
+    from src.services.diet_service import get_daily_nutrition_summary
+    return get_daily_nutrition_summary(db=db, user_id=current_user_id, log_date=log_date)
+
+
+# ==========================================
 # 📌 原有功能保持不变 (修复参数传递)
 # ==========================================
 @router.get("/{log_id}")
@@ -125,22 +146,3 @@ def parse_diet_text(
         text=body.text,
         auto_create=body.auto_create,
     )
-
-
-# ==========================================
-# 🆕 每日饮食汇总查询接口
-# ==========================================
-
-@router.get("/summary")
-def get_daily_summary(
-    log_date: Optional[date_type] = Query(default=None, description="查询日期，默认今天，格式 YYYY-MM-DD"),
-    db: Session = Depends(get_db),
-    current_user_id: str = Depends(get_current_user_id),
-):
-    """
-    查询用户某天的饮食汇总（按餐次分组 + 总热量/营养）
-
-    用于前端饮食看板展示。
-    """
-    from src.services.diet_service import get_daily_nutrition_summary
-    return get_daily_nutrition_summary(db=db, user_id=current_user_id, log_date=log_date)

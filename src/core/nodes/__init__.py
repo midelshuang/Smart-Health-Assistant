@@ -850,6 +850,24 @@ def generator_node(state: Dict[str, Any]) -> Dict[str, Any]:
     query = state.get("original_query", "")
     sql_results = state.get("sql_results", [])
     vector_results = state.get("vector_results", [])
+
+    # R10：优先使用 RRF 融合排序结果（跨源统一 top-K，按相关性排序）
+    # fusion 层给 SQL 侧结果打 source_type="nutrition_fact" 标记（向量侧无此值），
+    # 据此把融合列表拆回两路供上下文格式化，列表内保持 RRF 排序；
+    # 无融合结果（plan/unknown 等路径）时维持原始两路不变
+    fused_results = state.get("fused_results") or []
+    if fused_results:
+        sql_results = [r for r in fused_results
+                       if r.get("source_type") == "nutrition_fact"]
+        vector_results = [r for r in fused_results
+                          if r.get("source_type") != "nutrition_fact"]
+        logger.info(
+            f"generator 使用 RRF 融合结果: sql={len(sql_results)}, "
+            f"vector={len(vector_results)} (原始 "
+            f"sql={len(state.get('sql_results') or [])}, "
+            f"vector={len(state.get('vector_results') or [])})"
+        )
+
     feedback_directive = state.get("feedback_style_directive", "")
     intent = state.get("intent", "unknown")
 
@@ -1197,6 +1215,15 @@ def safety_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
     性能优化（2026-08-10）：
     1. 接入安全缓存：相同 query 第二次直接命中缓存，跳过正则+LLM双重校验
 
+    R02 重构（2026-10-26）：
+    1. 先风险判断、再意图放行——原实现的三处"前置放行"（追问补充/计划生成/
+       食物营养）都在风险判断之前执行，组合句（如"帮我开点降压药顺便说说营养"）
+       可借关键词绕过拦截。现在任何意图放行都必须先通过正则风险层。
+    2. 安全缓存键包含规则版本（见 cache_service._safety_rules_version），
+       safety_rules.yaml 热更新后旧缓存自动作废。
+    3. 意图放行仅用于跳过 LLM 慢审（正则已通过的确定性放行），
+       不再跳过任何风险判断。
+
     Args:
         state: 当前 RAGState 字典
 
@@ -1208,22 +1235,7 @@ def safety_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
     query = state.get("original_query", "")
     logger.info(f"安全护栏检查: query='{query[:50]}'")
 
-    # ========== 前置放行 0：对上一轮 AI 追问的补充回答 ==========
-    # ⚠️ 必须在安全缓存之前！否则旧缓存里的拦截记录会盖过追问检测
-    # 如果 conversation_context 里上一轮 AI 是追问（"请补充必要信息"等），
-    # 用户当前输入一定是在补充饮食计划所需的个人信息（年龄/疾病/身高/体重等），
-    # 不属于疾病诊断咨询，直接放行
-    conv_ctx = state.get("conversation_context", []) or []
-    if _is_reply_to_clarification(conv_ctx):
-        logger.info(f"🚦 前置放行 #0 追问补充: query='{query[:50]}'")
-        cache = _get_cache_service()
-        cache["set_safety"](query, {"is_safe": True, "category": "clarification_reply"})
-        return {
-            "safety_blocked": False,
-            "safety_category": "none",
-        }
-
-    # ---- 第1层优化：安全缓存检查 ----
+    # ---- 第1层优化：安全缓存检查（键含规则版本） ----
     cache = _get_cache_service()
     cached_safety = cache["get_safety"](query)
     if cached_safety is not None:
@@ -1245,9 +1257,50 @@ def safety_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "_from_cache": True,
         }
 
-    # ========== 前置放行：计划生成类请求 ==========
-    # 减肥/减脂/增肌/健身计划是健康生活咨询，不属于医疗行为
-    # 在这里快速识别并放行，避免被 LLM 语义校验误判
+    # ---- 第2层：正则快速风险判断（确定性拦截，先于任何意图放行） ----
+    safety_result = check_safety(query, use_llm=False)
+
+    if not safety_result.get("is_safe", True):
+        # 正则命中拦截
+        reply = build_safety_reply(safety_result, query)
+        logger.warning(
+            f"安全拦截触发[正则]: category={safety_result.get('category')}, "
+            f"method={safety_result.get('method')}"
+        )
+        # 写入安全缓存（拦截结果）
+        cache["set_safety"](query, {
+            "is_safe": False,
+            "category": safety_result.get("category", "other"),
+            "reason": safety_result.get("reason", ""),
+            "reply": reply,
+        })
+        return {
+            "safety_blocked": True,
+            "safety_category": safety_result.get("category", "other"),
+            "safety_reason": safety_result.get("reason", ""),
+            "generated_answer": reply,
+            "sources": [],
+            "intent": "blocked",
+        }
+
+    # ---- 第3层：意图放行（正则已通过，仅用于跳过 LLM 慢审） ----
+
+    # 放行 0：对上一轮 AI 追问的补充回答
+    # 如果 conversation_context 里上一轮 AI 是追问（"请补充必要信息"等），
+    # 用户当前输入大概率是在补充饮食计划所需的个人信息（年龄/疾病/身高/体重等），
+    # 跳过 LLM 慢审；危险内容仍会被第2层正则拦截
+    conv_ctx = state.get("conversation_context", []) or []
+    if _is_reply_to_clarification(conv_ctx):
+        logger.info(f"意图放行 #0 追问补充: query='{query[:50]}'")
+        cache["set_safety"](query, {"is_safe": True, "category": "clarification_reply"})
+        return {
+            "safety_blocked": False,
+            "safety_category": "none",
+        }
+
+    # 放行 1：计划生成类请求
+    # 减肥/减脂/增肌/健身计划是健康生活咨询，不属于医疗行为，
+    # 跳过 LLM 慢审，避免被语义校验误判
     plan_kw = [
         "减肥计划", "减脂计划", "增肌计划", "健身计划", "饮食计划",
         "减肥方案", "减脂方案", "健身方案", "增肌方案",
@@ -1255,7 +1308,7 @@ def safety_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
         "减肥", "减脂", "减重", "瘦身",
     ]
     if any(kw in query for kw in plan_kw):
-        logger.info(f"前置放行: 命中计划生成关键词，query='{query[:50]}'")
+        logger.info(f"意图放行: 命中计划生成关键词，query='{query[:50]}'")
         # 写入安全缓存（放行结果）
         cache["set_safety"](query, {"is_safe": True, "category": "plan_gen"})
         return {
@@ -1263,23 +1316,23 @@ def safety_check_node(state: Dict[str, Any]) -> Dict[str, Any]:
             "safety_category": "none",
         }
 
-    # ========== 前置放行：食物营养查询类请求 ==========
-    # 查询食物热量/蛋白质/脂肪等营养成分是纯数据查询，不涉及医疗建议
-    # 在这里快速识别并放行，跳过 LLM 慢审（可省 16 秒）
+    # 放行 2：食物营养查询类请求
+    # 查询食物热量/蛋白质/脂肪等营养成分是纯数据查询，不涉及医疗建议，
+    # 跳过 LLM 慢审（可省 16 秒）
     food_nutrition_kw = [
         "热量", "蛋白质", "脂肪", "碳水", "碳水化合物", "营养", "营养成分",
         "卡路里", "大卡", "kcal", "含量", "多少克", "升糖", "gi", "血糖",
         "膳食纤维", "维生素", "矿物质", "钠", "钙", "铁", "锌",
     ]
     if any(kw in query for kw in food_nutrition_kw):
-        logger.info(f"前置放行: 命中食物营养关键词，query='{query[:50]}'")
+        logger.info(f"意图放行: 命中食物营养关键词，query='{query[:50]}'")
         cache["set_safety"](query, {"is_safe": True, "category": "food_nutrition"})
         return {
             "safety_blocked": False,
             "safety_category": "none",
         }
 
-    # 执行双重校验
+    # ---- 第4层：LLM 语义校验（仅对未命中任何意图放行的查询执行） ----
     safety_result = check_safety(query, use_llm=True)
 
     if not safety_result.get("is_safe", True):

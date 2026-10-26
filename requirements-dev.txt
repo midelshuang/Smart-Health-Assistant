@@ -13,6 +13,9 @@ httpx==0.27.2
 ruff==0.6.9
 mypy==1.11.2
 
+# 数据库 schema 迁移（R10：版本管理，既有库 stamp head，增量走 autogenerate）
+alembic==1.14.1
+
 # 安全扫描
 pip-audit==2.7.3
 detect-secrets==1.5.0

@@ -73,21 +73,25 @@ jobs:
         run: |
           python -m pip install --upgrade pip
           pip install -r requirements.txt
-          pip install -r requirements-dev.txt || true
+          pip install -r requirements-dev.txt
           pip install ruff mypy pip-audit
 
+      # R06：ruff 改为必须通过（阻断级规则见 ruff.toml：语法错误/未定义名）
+      # 完整风格治理另行专项开展，暂不把 UP/I/B/RUF 等纳入阻断
       - name: Ruff lint
-        run: ruff check src tests || true
-        # 首次启用：先 advisory，不阻断流水线；待代码整改后改为必须通过
+        run: ruff check src tests
 
+      # R06：审计目标改为 requirements.txt（钉版依赖本身），移除假占位 ignore
+      # 注意：ecdsa(PYSEC-2026-1325) 上游暂无修复版本，升级依赖前无法阻断，
+      # 故保留 continue-on-error；依赖升级专项完成后移除该行
       - name: pip-audit security scan
-        run: pip-audit --strict --ignore-vuln GHSA-XXXX
-        # 暂不强制 strict，先看清单
+        run: pip-audit -r requirements.txt --strict --desc off
         continue-on-error: true
 
+      # R06：schema 初始化失败必须让流水线失败
       - name: Initialize database schema
         run: |
-          PGPASSWORD=postgres psql -h localhost -U postgres -d healthai_test -f database/init.sql
+          PGPASSWORD=postgres psql -v ON_ERROR_STOP=1 -h localhost -U postgres -d healthai_test -f database/init.sql
 
       - name: Wait for ChromaDB
         run: |
@@ -123,3 +127,7 @@ jobs:
           name: coverage-${{ github.sha }}
           path: coverage.xml
           retention-days: 14
+
+      # R06：Docker 镜像必须能构建（原 Dockerfile 的 site-packages COPY 路径错误）
+      - name: Docker build check
+        run: docker build -t healthai:ci-${{ github.sha }} .

@@ -82,6 +82,10 @@ class User(Base):
     # ===== RBAC 角色 =====
     role = Column(String(20), default='user', nullable=False, comment="角色: user/admin/expert")
 
+    # ===== R09：会话版本号（改密/重置密码后 +1，旧 JWT 因 ver 不匹配而失效） =====
+    session_version = Column(Integer, nullable=False, default=0, server_default='0',
+                             comment="会话版本号，密码变更时自增使旧 token 失效")
+
     # ===== 专家审批 =====
     approved = Column(Boolean, default=True, nullable=False, comment="是否已审批(专家注册默认False需管理员审批)")
 

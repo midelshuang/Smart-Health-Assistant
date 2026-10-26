@@ -1,0 +1,39 @@
+# R06：构建上下文瘦身 —— 生产镜像不含测试/文档/原始数据/版本库
+.git
+.github
+.trae
+.vscode
+__pycache__
+**/__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+htmlcov
+.coverage
+coverage.xml
+
+# 文档与测试
+docs
+tests
+*.md
+!README.md
+
+# 原始数据与本地状态（74MB 扫描版 PDF 不入镜像）
+raw_data
+chroma_db
+data
+database/*.sql.bak
+*.pdf
+*.docx
+*.xlsx
+
+# 本地环境与日志
+.env
+.env.*
+*.log
+logs
+
+# IDE 与杂项
+.idea
+.test_deps
+项目文档
