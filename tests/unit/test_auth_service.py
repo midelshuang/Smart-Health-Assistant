@@ -128,19 +128,37 @@ class TestGetCurrentUserId:
     """get_current_user_id"""
 
     def test_returns_user_id_for_valid_token(self):
-        # 生成一个有效 token
+        # 生成一个有效 token（无 ver 声明视为 0）
         token = create_access_token({"sub": "user_abc"})
 
-        # Mock DB：返回存在的用户
+        # Mock DB：返回存在的用户（session_version=0 与无 ver 的历史 token 匹配）
         db = MagicMock()
         user_mock = MagicMock()
         user_mock.external_id = "user_abc"
+        user_mock.session_version = 0
         query_mock = MagicMock()
         query_mock.filter.return_value.first.return_value = user_mock
         db.query.return_value = query_mock
 
         result = get_current_user_id(token=token, db=db)
         assert result == "user_abc"
+
+    def test_raises_401_when_session_version_mismatch(self):
+        """R09：改密后 session_version 自增，旧 token（ver 落后）必须失效"""
+        from fastapi import HTTPException
+        token = create_access_token({"sub": "user_abc", "ver": 0})
+
+        db = MagicMock()
+        user_mock = MagicMock()
+        user_mock.external_id = "user_abc"
+        user_mock.session_version = 1  # 改密后版本已 +1
+        query_mock = MagicMock()
+        query_mock.filter.return_value.first.return_value = user_mock
+        db.query.return_value = query_mock
+
+        with pytest.raises(HTTPException) as exc:
+            get_current_user_id(token=token, db=db)
+        assert exc.value.status_code == 401
 
     def test_raises_401_for_invalid_token(self):
         from fastapi import HTTPException
