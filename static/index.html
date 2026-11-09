@@ -929,6 +929,46 @@
           opacity: 1;
         }
       }
+      /* ============================================================ */
+      /* 换菜弹窗 + 计划页食物行                                        */
+      /* ============================================================ */
+      .swap-modal-card {
+        background: var(--bg-card);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow-hover);
+        width: min(420px, 92vw);
+        max-height: 76vh;
+        overflow-y: auto;
+        padding: 20px 22px;
+        animation: slideUp 0.25s ease;
+      }
+      .plan-food-row {
+        cursor: pointer;
+        border-radius: 8px;
+        transition: background 0.15s ease;
+      }
+      .plan-food-row:hover {
+        background: var(--bg-soft);
+      }
+      .swap-candidate-chip {
+        display: inline-block;
+        padding: 8px 14px;
+        margin: 0 8px 8px 0;
+        background: var(--accent-soft);
+        border: 1px solid var(--accent);
+        border-radius: 10px;
+        font-size: 13px;
+        color: var(--accent-primary);
+        cursor: pointer;
+        font-weight: 500;
+        transition:
+          transform 0.15s ease,
+          box-shadow 0.15s ease;
+      }
+      .swap-candidate-chip:hover {
+        transform: translateY(-1px);
+        box-shadow: var(--shadow-hover);
+      }
       @keyframes slideUp {
         from {
           transform: translateY(20px);
@@ -2935,13 +2975,14 @@
         renderPlansPanel();
       }
 
-      function renderPlanMealCards(day) {
+      function renderPlanMealCards(day, dayIdx) {
         const meals = (day && day.meals) || [];
         if (!meals.length) {
           return `<div class="desc">该计划为框架型，暂无每日具体餐单</div>`;
         }
         let html = `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px;">`;
-        for (const meal of meals) {
+        for (let mealIdx = 0; mealIdx < meals.length; mealIdx++) {
+          const meal = meals[mealIdx];
           const meta =
             PLAN_MEAL_META[meal.meal_type] ||
             (meal.meal_type
@@ -2954,18 +2995,18 @@
               <div style="font-weight: 700; color: #fff; font-size: 14px;">${meta.icon} ${meta.label}${meal.time ? `<span style="font-weight: 400; opacity: 0.85; font-size: 12px; margin-left: 8px;">${meal.time}</span>` : ""}</div>
               ${kcal ? `<div style="color: #fff; font-size: 13px; font-weight: 600;">约 ${kcal}</div>` : ""}
             </div>
-            <div style="padding: 6px 14px 10px 14px;">`;
+            <div style="padding: 6px 8px 10px 8px;">`;
           if (!items.length) {
             html += `<div style="padding: 8px 0; color: var(--text-light); font-size: 13px;">暂无食物</div>`;
           } else {
-            for (const item of items) {
-              html += `<div style="display: flex; align-items: baseline; gap: 8px; padding: 7px 0; border-bottom: 1px dashed var(--border);">
-                <div style="flex: 1; font-size: 13px; color: var(--text-main); font-weight: 500;">${item.food || "?"}</div>
+            items.forEach((item, itemIdx) => {
+              html += `<div class="plan-food-row" onclick="openSwapDialog(${dayIdx}, ${mealIdx}, ${itemIdx})" title="点击换一道同类菜" style="display: flex; align-items: baseline; gap: 8px; padding: 7px 6px; border-bottom: 1px dashed var(--border);">
+                <div style="flex: 1; font-size: 13px; color: var(--text-main); font-weight: 500;">${item.food || "?"}<span style="font-size: 10px; margin-left: 6px; opacity: 0.7;">🔄</span></div>
                 <div style="font-size: 12px; color: var(--text-muted);">${item.quantity || "-"}</div>
                 <div style="font-size: 12px; color: var(--accent-primary); font-weight: 600; min-width: 64px; text-align: right;">${item.calories || "?"} kcal</div>
                 ${item.cooking_method ? `<div style="font-size: 11px; color: var(--text-light);">${item.cooking_method}</div>` : ""}
               </div>`;
-            }
+            });
           }
           html += `</div></div>`;
         }
@@ -3065,7 +3106,9 @@
           } else if (Array.isArray(cfg.meals) && cfg.meals.length) {
             day = { meals: cfg.meals }; // 兼容旧单日计划
           }
-          cards.innerHTML = day ? renderPlanMealCards(day) : "";
+          cards.innerHTML = day
+            ? renderPlanMealCards(day, plansPanelDayIdx)
+            : "";
         }
 
         // 计划概览（宏量营养 + 参考指南 + 换菜池提示）
@@ -3099,11 +3142,205 @@
             }
             ${
               swapCats.length
-                ? `<div style="margin-top: 8px; font-size: 12px; color: var(--text-light);">🔄 内置 ${swapCats.length} 类换菜食材池（点餐次卡片里的食物可换同类菜，即将上线）</div>`
+                ? `<div style="margin-top: 8px; font-size: 12px; color: var(--text-light);">🔄 内置 ${swapCats.length} 类换菜食材池（点餐次卡片里的食物即可换菜）</div>`
                 : ""
             }
           </div>`;
         }
+      }
+
+      // ============================================================
+      // 🔄 换菜（点击食物 → 同类候选 → food_validator 校验 → 自动保存）
+      // ============================================================
+      let swapCtx = null; // { dayIdx, mealIdx, itemIdx, origFood }
+
+      // 与后端 _MEAL_CATEGORY_KEYWORDS 对齐的类别判定
+      const SWAP_KEYWORDS = {
+        主食: [
+          "米",
+          "饭",
+          "面",
+          "馒头",
+          "面包",
+          "红薯",
+          "紫薯",
+          "薯",
+          "玉米",
+          "燕麦",
+          "藜麦",
+          "小米",
+          "杂粮",
+          "粥",
+          "地瓜",
+          "山药",
+          "荞麦",
+        ],
+        汤品: ["汤", "羹"],
+        蛋白: [
+          "鸡胸",
+          "鸡",
+          "蛋",
+          "鱼",
+          "虾",
+          "肉",
+          "牛肉",
+          "豆腐",
+          "鸭",
+          "瘦",
+          "里脊",
+          "三文鱼",
+          "鲈鱼",
+          "龙利",
+          "鱿鱼",
+        ],
+        蔬菜: [
+          "菜",
+          "花",
+          "瓜",
+          "茄",
+          "笋",
+          "菇",
+          "椒",
+          "菠菜",
+          "西兰花",
+          "番茄",
+          "南瓜",
+          "胡萝卜",
+          "油麦菜",
+          "黄瓜",
+          "芦笋",
+          "木耳",
+          "海带",
+          "紫菜",
+        ],
+      };
+      // 内置候选池（与后端 _MEAL_CATEGORY_ALTS 对齐，7_days 计划没有 food_swap_pool 时兜底）
+      const SWAP_ALT_POOL = {
+        主食: [
+          "糙米饭",
+          "燕麦粥",
+          "藜麦饭",
+          "小米饭",
+          "蒸红薯",
+          "蒸紫薯",
+          "玉米棒",
+          "杂粮馒头",
+          "全麦面包片",
+          "荞麦面",
+          "蒸山药",
+        ],
+        蛋白: [
+          "清蒸鲈鱼",
+          "香煎三文鱼",
+          "白灼虾仁",
+          "卤牛肉片",
+          "嫩豆腐",
+          "煎鸡胸肉",
+          "清炖鸭肉",
+          "酱焖瘦猪肉",
+          "白灼鱿鱼",
+        ],
+        蔬菜: [
+          "凉拌菠菜",
+          "清炒西兰花",
+          "蒜蓉油麦菜",
+          "清蒸南瓜",
+          "番茄炒蛋",
+          "清炒胡萝卜丝",
+          "凉拌黄瓜",
+          "蒜蓉茄子",
+          "清炒芦笋",
+          "凉拌木耳",
+          "蒜蓉海带丝",
+        ],
+        汤品: [
+          "紫菜蛋花汤",
+          "番茄豆腐汤",
+          "冬瓜虾皮汤",
+          "菠菜蛋花汤",
+          "番茄龙利鱼汤",
+          "菌菇鸡汤",
+        ],
+      };
+      const SWAP_POOL_KEY_BY_CAT = {
+        主食: "主食替代",
+        蛋白: "优质蛋白替代",
+        蔬菜: "蔬菜替代",
+        汤品: "低卡饮品",
+      };
+
+      function classifySwapFood(name) {
+        if (!name) return null;
+        for (const [cat, kws] of Object.entries(SWAP_KEYWORDS)) {
+          if (kws.some((kw) => name.includes(kw))) return cat;
+        }
+        return "蔬菜";
+      }
+
+      function openSwapDialog(dayIdx, mealIdx, itemIdx) {
+        const day = (((plansPanelPlan || {}).config || {}).days || [])[dayIdx];
+        const meal = day && (day.meals || [])[mealIdx];
+        const item = meal && (meal.items || [])[itemIdx];
+        if (!item || !item.food) return;
+        swapCtx = { dayIdx, mealIdx, itemIdx, origFood: item.food };
+        document.getElementById("swapModalOrig").innerHTML =
+          `原菜：<b style="color: var(--text-main)">${item.food}</b>${item.quantity ? `（${item.quantity}）` : ""}`;
+        const cat = classifySwapFood(item.food);
+        // 候选 = 计划换菜池对应类别 ∪ 内置池（去重、排除原菜）
+        const poolKey = SWAP_POOL_KEY_BY_CAT[cat];
+        const swapPool =
+          (poolKey && (plansPanelPlan.config.food_swap_pool || {})[poolKey]) ||
+          [];
+        const seen = new Set([item.food]);
+        const candidates = [...swapPool, ...(SWAP_ALT_POOL[cat] || [])].filter(
+          (f) => {
+            if (seen.has(f)) return false;
+            seen.add(f);
+            return true;
+          },
+        );
+        const box = document.getElementById("swapModalCandidates");
+        if (!candidates.length) {
+          box.innerHTML =
+            '<div style="font-size: 13px; color: var(--text-light);">该食材暂无同类候选</div>';
+        } else {
+          box.innerHTML = candidates
+            .map(
+              (f) =>
+                `<span class="swap-candidate-chip" onclick='applySwap("${String(f).replace(/"/g, "&quot;")}")'>${f}</span>`,
+            )
+            .join("");
+        }
+        document.getElementById("swapModalOverlay").classList.add("active");
+      }
+
+      function closeSwapDialog() {
+        document.getElementById("swapModalOverlay").classList.remove("active");
+        swapCtx = null;
+      }
+
+      async function applySwap(newFood) {
+        if (!swapCtx || !plansPanelPlanId || !newFood) return;
+        const { dayIdx, mealIdx, itemIdx, origFood } = swapCtx;
+        const item =
+          plansPanelPlan.config.days[dayIdx].meals[mealIdx].items[itemIdx];
+        if (!item) return;
+        item.food = newFood;
+        const r = await apiCall("PUT", `/api/v1/plans/${plansPanelPlanId}`, {
+          config: plansPanelPlan.config,
+        });
+        if (!r.ok) {
+          item.food = origFood; // 校验失败回退原菜（后端 food_validator 风险明细）
+          const detail =
+            (r.data && (r.data.detail || r.data.error)) || "校验未通过";
+          showToast(`❌ 换菜失败：${detail}`, 4000);
+          return;
+        }
+        closeSwapDialog();
+        showToast(`✅ 已换为「${newFood}」，热量已重算并保存`);
+        await fetchPlansPanelDetail();
+        plansPanelDayIdx = dayIdx; // 保持当前查看的天
+        renderPlansPanel();
       }
 
       // ============================================================
@@ -5143,6 +5380,49 @@
             <span id="sourceModalChunkIdx" style="margin-left: 8px"></span>
           </div>
           <div id="sourceModalFileInfo"></div>
+        </div>
+      </div>
+    </div>
+    <!-- ============================================================ -->
+    <!-- 换菜弹窗                                                        -->
+    <!-- ============================================================ -->
+    <div
+      class="source-modal-overlay"
+      id="swapModalOverlay"
+      onclick="if (event.target === this) closeSwapDialog();"
+    >
+      <div class="swap-modal-card" role="dialog" aria-modal="true">
+        <div
+          style="
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 6px;
+          "
+        >
+          <div style="font-weight: 700; font-size: 15px">🔄 换一道同类菜</div>
+          <button
+            onclick="closeSwapDialog()"
+            style="
+              background: none;
+              border: none;
+              font-size: 18px;
+              cursor: pointer;
+              color: var(--text-light);
+            "
+          >
+            ✕
+          </button>
+        </div>
+        <div
+          id="swapModalOrig"
+          style="font-size: 13px; color: var(--text-muted); margin-bottom: 14px"
+        ></div>
+        <div id="swapModalCandidates"></div>
+        <div
+          style="font-size: 11px; color: var(--text-light); margin-top: 10px"
+        >
+          换菜后自动进行营养安全校验并保存，失败将保留原菜
         </div>
       </div>
     </div>
