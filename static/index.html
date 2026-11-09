@@ -14,20 +14,29 @@
       :root {
         --sidebar-w: 260px;
         --rightbar-w: 320px;
-        --bg-main: #f0f2f5;
+        --bg-main: #f6f8fb;
         --bg-card: #ffffff;
-        --bg-sidebar: #1e293b;
-        --bg-rightbar: #f8fafc;
-        --accent: #667eea;
-        --accent2: #764ba2;
-        --text-main: #1e293b;
+        --bg-sidebar: #ffffff;
+        --bg-rightbar: #f6f8fb;
+        --bg-soft: #f8fafc;
+        --accent: #10b981;
+        --accent2: #14b8a6;
+        --accent-primary: #059669;
+        --accent-soft: #ecfdf5;
+        --grad-primary: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
+        --text-main: #0f172a;
+        --text-secondary: #475569;
         --text-muted: #64748b;
         --text-light: #94a3b8;
-        --text-invert: #e2e8f0;
-        --border: #e2e8f0;
-        --radius: 8px;
-        --shadow: 0 2px 8px rgba(0, 0, 0, 0.06);
-        --shadow-lg: 0 8px 24px rgba(0, 0, 0, 0.12);
+        --text-invert: #0f172a;
+        --border: #eef1f5;
+        --border-strong: #e2e8f0;
+        --radius: 14px;
+        --radius-sm: 10px;
+        --shadow:
+          0 1px 2px rgba(16, 24, 40, 0.04), 0 1px 3px rgba(16, 24, 40, 0.06);
+        --shadow-lg: 0 12px 32px rgba(16, 24, 40, 0.12);
+        --shadow-hover: 0 4px 12px rgba(16, 185, 129, 0.12);
       }
 
       body {
@@ -39,6 +48,38 @@
         line-height: 1.6;
         overflow: hidden;
         height: 100vh;
+        -webkit-font-smoothing: antialiased;
+        text-rendering: optimizeLegibility;
+      }
+
+      ::-webkit-scrollbar {
+        width: 8px;
+        height: 8px;
+      }
+      ::-webkit-scrollbar-track {
+        background: transparent;
+      }
+      ::-webkit-scrollbar-thumb {
+        background: #d8dee7;
+        border-radius: 999px;
+        border: 2px solid transparent;
+        background-clip: content-box;
+      }
+      ::-webkit-scrollbar-thumb:hover {
+        background: #c3cddb;
+        border: 2px solid transparent;
+        background-clip: content-box;
+      }
+      * {
+        scrollbar-width: thin;
+        scrollbar-color: #d8dee7 transparent;
+      }
+
+      h3,
+      h4 {
+        font-weight: 600;
+        color: var(--text-main);
+        letter-spacing: -0.01em;
       }
 
       /* ============================================================ */
@@ -57,7 +98,8 @@
         width: var(--sidebar-w);
         min-width: var(--sidebar-w);
         background: var(--bg-sidebar);
-        color: var(--text-invert);
+        color: var(--text-main);
+        border-right: 1px solid var(--border);
         display: flex;
         flex-direction: column;
         overflow-y: auto;
@@ -68,26 +110,36 @@
         padding: 18px 20px;
         font-size: 18px;
         font-weight: 700;
+        letter-spacing: -0.01em;
         display: flex;
         align-items: center;
-        gap: 8px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        gap: 10px;
+        border-bottom: 1px solid var(--border);
       }
 
       .sidebar-left .logo .icon {
-        font-size: 22px;
+        font-size: 15px;
+        width: 30px;
+        height: 30px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        background: var(--grad-primary);
+        border-radius: 9px;
+        box-shadow: 0 2px 6px rgba(16, 185, 129, 0.25);
       }
 
       .sidebar-left .info-section {
         padding: 12px 20px;
-        border-bottom: 1px solid rgba(255, 255, 255, 0.06);
+        border-bottom: 1px solid var(--border);
         font-size: 12px;
       }
 
       .sidebar-left .info-section .info-title {
         color: var(--text-light);
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.6px;
+        font-weight: 600;
         font-size: 10px;
         margin-bottom: 6px;
       }
@@ -97,11 +149,11 @@
         justify-content: space-between;
         align-items: center;
         padding: 3px 0;
-        color: #cbd5e0;
+        color: var(--text-secondary);
       }
 
       .sidebar-left .info-row .val {
-        color: #93c5fd;
+        color: var(--accent-primary);
         font-weight: 500;
       }
 
@@ -114,13 +166,13 @@
         animation: pulse 2s infinite;
       }
       .status-dot.green {
-        background: #48bb78;
+        background: #10b981;
       }
       .status-dot.orange {
-        background: #ed8936;
+        background: #f59e0b;
       }
       .status-dot.red {
-        background: #f56565;
+        background: #ef4444;
       }
 
       @keyframes pulse {
@@ -135,26 +187,26 @@
 
       .badge {
         display: inline-block;
-        padding: 1px 6px;
-        border-radius: 4px;
+        padding: 1px 8px;
+        border-radius: 999px;
         font-size: 10px;
         font-weight: 600;
       }
       .badge-success {
-        background: #c6f6d5;
-        color: #22543d;
+        background: #d1fae5;
+        color: #065f46;
       }
       .badge-warning {
-        background: #feebc8;
-        color: #7b341e;
+        background: #fef3c7;
+        color: #92400e;
       }
       .badge-danger {
-        background: #fed7d7;
-        color: #742a2a;
+        background: #fee2e2;
+        color: #b91c1c;
       }
       .badge-info {
-        background: #bee3f8;
-        color: #2a4365;
+        background: #e0f2fe;
+        color: #0369a1;
       }
 
       .sidebar-left .nav-section {
@@ -163,38 +215,46 @@
       }
 
       .sidebar-left .nav-section .nav-label {
-        padding: 8px 20px 4px;
+        padding: 10px 20px 6px;
         font-size: 10px;
         color: var(--text-light);
         text-transform: uppercase;
-        letter-spacing: 0.5px;
+        letter-spacing: 0.6px;
+        font-weight: 600;
       }
 
       .sidebar-left .nav-item {
         display: flex;
         align-items: center;
         gap: 10px;
-        padding: 10px 20px;
+        margin: 2px 10px;
+        padding: 9px 12px;
         cursor: pointer;
         font-size: 14px;
-        color: #cbd5e0;
-        transition: all 0.15s;
+        font-weight: 500;
+        color: var(--text-secondary);
+        border-radius: 10px;
         border-left: 3px solid transparent;
+        transition:
+          background 0.18s ease,
+          color 0.18s ease,
+          border-color 0.18s ease;
       }
 
       .sidebar-left .nav-item:hover {
-        background: rgba(255, 255, 255, 0.06);
-        color: #fff;
+        background: #f6f8fb;
+        color: var(--text-main);
       }
 
       .sidebar-left .nav-item.active {
         background: linear-gradient(
           90deg,
-          rgba(102, 126, 234, 0.2) 0%,
+          rgba(16, 185, 129, 0.12) 0%,
+          rgba(20, 184, 166, 0.04) 72%,
           transparent 100%
         );
-        border-left-color: var(--accent);
-        color: #fff;
+        border-left-color: #10b981;
+        color: var(--accent-primary);
         font-weight: 600;
       }
 
@@ -205,17 +265,19 @@
       }
 
       .sidebar-left .sidebar-footer {
-        padding: 10px 20px;
-        border-top: 1px solid rgba(255, 255, 255, 0.06);
+        padding: 12px 20px;
+        border-top: 1px solid var(--border);
         font-size: 11px;
         color: var(--text-light);
       }
 
       .sidebar-left .sidebar-footer a {
-        color: #93c5fd;
+        color: var(--accent-primary);
         text-decoration: none;
+        transition: color 0.15s ease;
       }
       .sidebar-left .sidebar-footer a:hover {
+        color: var(--accent);
         text-decoration: underline;
       }
 
@@ -236,7 +298,7 @@
         display: flex;
         align-items: center;
         justify-content: space-between;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.05);
+        border-bottom: 1px solid var(--border);
         flex-shrink: 0;
         gap: 12px;
       }
@@ -264,21 +326,24 @@
 
       .top-navbar .quick-btn {
         padding: 6px 12px;
-        border: 1px solid var(--border);
-        border-radius: 6px;
-        background: #f7fafc;
-        color: var(--text-muted);
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-sm);
+        background: #ffffff;
+        color: var(--text-secondary);
         font-size: 12px;
+        font-weight: 500;
         cursor: pointer;
-        transition: all 0.15s;
+        transition: all 0.18s ease;
         text-decoration: none;
         display: inline-flex;
         align-items: center;
         gap: 4px;
       }
       .top-navbar .quick-btn:hover {
-        border-color: var(--accent);
-        color: var(--accent);
+        border-color: rgba(16, 185, 129, 0.45);
+        background: var(--accent-soft);
+        color: var(--accent-primary);
+        text-decoration: none;
       }
 
       .module-content {
@@ -289,6 +354,7 @@
 
       .panel {
         background: var(--bg-card);
+        border: 1px solid var(--border);
         border-radius: var(--radius);
         padding: 24px;
         box-shadow: var(--shadow);
@@ -314,9 +380,11 @@
 
       .panel h2 {
         font-size: 18px;
+        font-weight: 700;
+        letter-spacing: -0.01em;
         margin-bottom: 6px;
-        padding-bottom: 8px;
-        border-bottom: 2px solid var(--border);
+        padding-bottom: 10px;
+        border-bottom: 1px solid var(--border);
       }
       .panel .desc {
         color: var(--text-muted);
@@ -369,10 +437,18 @@
 
       .right-card {
         background: var(--bg-card);
-        border-radius: 6px;
-        padding: 12px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        padding: 14px;
         margin-bottom: 10px;
-        box-shadow: 0 1px 3px rgba(0, 0, 0, 0.04);
+        box-shadow: var(--shadow);
+        transition:
+          transform 0.18s ease,
+          box-shadow 0.18s ease;
+      }
+      .right-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-hover);
       }
 
       .right-card .card-title {
@@ -407,31 +483,31 @@
       }
       .right-card .source-item .source-badge {
         display: inline-block;
-        padding: 1px 6px;
-        border-radius: 8px;
+        padding: 1px 8px;
+        border-radius: 999px;
         font-size: 10px;
         font-weight: 600;
         margin-left: 4px;
       }
       .right-card .source-badge-kb {
-        background: #dcfce7;
-        color: #166534;
+        background: #d1fae5;
+        color: #065f46;
       }
       .right-card .source-badge-llm {
         background: #fef3c7;
         color: #92400e;
       }
       .right-card .answer-source-banner {
-        padding: 6px 8px;
-        border-radius: 6px;
+        padding: 6px 10px;
+        border-radius: var(--radius-sm);
         margin-bottom: 8px;
         font-size: 11px;
         line-height: 1.4;
       }
       .right-card .answer-source-banner.kb {
-        background: #f0fdf4;
-        color: #166534;
-        border: 1px solid #bbf7d0;
+        background: #ecfdf5;
+        color: #047857;
+        border: 1px solid #a7f3d0;
       }
       .right-card .answer-source-banner.llm {
         background: #fffbeb;
@@ -440,15 +516,20 @@
       }
 
       .right-card .plan-item {
-        padding: 6px 8px;
-        border-radius: 4px;
-        background: #f7fafc;
+        padding: 8px 10px;
+        border-radius: var(--radius-sm);
+        border: 1px solid transparent;
+        background: var(--bg-soft);
         margin-bottom: 4px;
         font-size: 12px;
         cursor: pointer;
+        transition:
+          background 0.15s ease,
+          border-color 0.15s ease;
       }
       .right-card .plan-item:hover {
-        background: #edf2f7;
+        background: var(--accent-soft);
+        border-color: rgba(16, 185, 129, 0.25);
       }
 
       .right-toggle-btn {
@@ -461,15 +542,21 @@
         background: var(--bg-card);
         border: 1px solid var(--border);
         border-right: none;
-        border-radius: 6px 0 0 6px;
+        border-radius: 10px 0 0 10px;
         cursor: pointer;
         display: flex;
         align-items: center;
         justify-content: center;
         font-size: 12px;
-        color: var(--text-muted);
-        transition: right 0.25s ease;
+        color: var(--text-light);
+        box-shadow: -1px 1px 3px rgba(16, 24, 40, 0.05);
+        transition:
+          right 0.25s ease,
+          color 0.15s ease;
         z-index: 10;
+      }
+      .right-toggle-btn:hover {
+        color: var(--accent-primary);
       }
       .right-toggle-btn.collapsed {
         right: 0;
@@ -492,19 +579,34 @@
       .form-group select,
       .form-group textarea {
         width: 100%;
-        padding: 9px 11px;
-        border: 1px solid var(--border);
-        border-radius: 6px;
+        padding: 9px 12px;
+        border: 1px solid var(--border-strong);
+        border-radius: var(--radius-sm);
         font-size: 14px;
         font-family: inherit;
-        transition: border-color 0.15s;
+        background: #ffffff;
+        color: var(--text-main);
+        transition:
+          border-color 0.18s ease,
+          box-shadow 0.18s ease;
       }
       .form-group input:focus,
       .form-group select:focus,
       .form-group textarea:focus {
         outline: none;
-        border-color: var(--accent);
-        box-shadow: 0 0 0 2px rgba(102, 126, 234, 0.1);
+        border-color: #10b981;
+        box-shadow: 0 0 0 3px rgba(16, 185, 129, 0.15);
+      }
+      .form-group input::placeholder,
+      .form-group textarea::placeholder {
+        color: var(--text-light);
+      }
+      .form-group input[readonly] {
+        background: var(--bg-soft);
+        color: var(--text-muted);
+      }
+      .form-group textarea {
+        resize: vertical;
       }
       .form-row {
         display: grid;
@@ -513,82 +615,107 @@
       }
 
       button.btn {
-        background: linear-gradient(
-          135deg,
-          var(--accent) 0%,
-          var(--accent2) 100%
-        );
-        color: white;
+        background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
+        color: #ffffff;
         border: none;
         padding: 10px 20px;
-        border-radius: 6px;
+        border-radius: var(--radius-sm);
         cursor: pointer;
         font-size: 14px;
         font-weight: 600;
-        transition: all 0.15s;
+        letter-spacing: 0.01em;
+        box-shadow:
+          0 1px 2px rgba(16, 24, 40, 0.06),
+          0 1px 3px rgba(16, 185, 129, 0.18);
+        transition: all 0.18s ease;
         margin-right: 6px;
         margin-bottom: 6px;
       }
       button.btn:hover {
+        filter: brightness(1.06);
         transform: translateY(-1px);
-        box-shadow: 0 4px 10px rgba(102, 126, 234, 0.3);
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.28);
+      }
+      button.btn:active {
+        transform: translateY(0);
+        filter: brightness(0.98);
       }
       button.btn:disabled {
-        opacity: 0.6;
+        opacity: 0.55;
         cursor: not-allowed;
         transform: none;
+        filter: none;
+        box-shadow: none;
       }
       button.btn-secondary {
-        background: #edf2f7;
-        color: var(--text-muted);
+        background: #ffffff;
+        color: var(--text-secondary);
+        border: 1px solid var(--border-strong);
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
+      }
+      button.btn-secondary:hover {
+        background: #f8fafc;
+        border-color: #cbd5e1;
+        color: var(--text-main);
+        filter: none;
+        transform: translateY(-1px);
+        box-shadow: 0 2px 6px rgba(16, 24, 40, 0.08);
       }
 
       .result {
         margin-top: 16px;
-        padding: 12px;
-        background: #f7fafc;
-        border-left: 3px solid var(--accent);
-        border-radius: 4px;
+        padding: 14px 16px;
+        background: var(--bg-soft);
+        border: 1px solid var(--border);
+        border-left: 3px solid #10b981;
+        border-radius: var(--radius-sm);
         font-size: 13px;
+        color: var(--text-secondary);
         white-space: pre-wrap;
         word-break: break-word;
         min-height: 40px;
       }
       .result.error {
-        border-left-color: #f56565;
-        background: #fff5f5;
-        color: #c53030;
+        border-color: #fee2e2;
+        border-left-color: #ef4444;
+        background: #fef2f2;
+        color: #b91c1c;
       }
       .result.success {
-        border-left-color: #48bb78;
-        background: #f0fff4;
+        border-color: #d1fae5;
+        border-left-color: #10b981;
+        background: #f0fdf4;
+        color: #065f46;
       }
 
       .sub-tabs {
         display: flex;
         gap: 4px;
         flex-wrap: wrap;
-        margin-bottom: 14px;
+        margin-bottom: 16px;
         padding: 4px;
         background: #f1f5f9;
-        border-radius: 6px;
+        border-radius: var(--radius-sm);
       }
       .sub-tab {
-        padding: 5px 10px;
+        padding: 6px 12px;
         border: none;
         background: transparent;
         color: var(--text-muted);
         cursor: pointer;
-        border-radius: 4px;
+        border-radius: 8px;
         font-size: 12px;
-        transition: all 0.15s;
+        font-weight: 500;
+        transition: all 0.18s ease;
       }
       .sub-tab:hover {
-        background: #e2e8f0;
+        background: #e8edf3;
+        color: var(--text-main);
       }
       .sub-tab.active {
-        background: linear-gradient(135deg, var(--accent), var(--accent2));
-        color: white;
+        background: linear-gradient(135deg, #10b981, #14b8a6);
+        color: #ffffff;
+        box-shadow: 0 1px 3px rgba(16, 185, 129, 0.3);
       }
 
       .stats-grid {
@@ -598,61 +725,81 @@
         margin-bottom: 16px;
       }
       .stat-card {
-        background: linear-gradient(135deg, #f7fafc 0%, #edf2f7 100%);
+        background: var(--bg-card);
+        border: 1px solid var(--border);
         padding: 16px;
-        border-radius: 8px;
+        border-radius: var(--radius);
         text-align: center;
+        box-shadow: var(--shadow);
+        transition:
+          transform 0.18s ease,
+          box-shadow 0.18s ease;
+      }
+      .stat-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-hover);
       }
       .stat-card .value {
-        font-size: 24px;
+        font-size: 22px;
         font-weight: 700;
-        color: var(--accent);
+        color: var(--accent-primary);
         margin: 4px 0;
+        font-variant-numeric: tabular-nums;
       }
       .stat-card .label {
         font-size: 11px;
+        font-weight: 600;
         color: var(--text-muted);
         text-transform: uppercase;
+        letter-spacing: 0.5px;
       }
 
       .chat-container {
         border: 1px solid var(--border);
-        border-radius: 8px;
+        border-radius: var(--radius);
         height: 360px;
         overflow-y: auto;
-        padding: 12px;
-        background: #f7fafc;
+        padding: 16px;
+        background: var(--bg-soft);
         margin-bottom: 12px;
       }
       .chat-msg {
         margin-bottom: 10px;
-        padding: 8px 12px;
-        border-radius: 8px;
+        padding: 10px 14px;
+        border-radius: 14px;
         max-width: 80%;
         font-size: 14px;
+        line-height: 1.65;
+        word-break: break-word;
       }
       .chat-msg.user {
-        background: var(--accent);
-        color: white;
+        background: linear-gradient(135deg, #10b981, #14b8a6);
+        color: #ffffff;
         margin-left: auto;
+        border-bottom-right-radius: 4px;
+        box-shadow: 0 2px 8px rgba(16, 185, 129, 0.2);
       }
       .chat-msg.bot {
-        background: white;
+        background: #ffffff;
         border: 1px solid var(--border);
+        border-bottom-left-radius: 4px;
+        box-shadow: 0 1px 2px rgba(16, 24, 40, 0.04);
       }
       .chat-msg .role {
         font-size: 11px;
-        opacity: 0.6;
+        font-weight: 600;
+        opacity: 0.65;
         margin-bottom: 2px;
       }
 
       .metrics-display {
-        background: #1a202c;
-        color: #00ff00;
-        padding: 12px;
-        border-radius: 6px;
-        font-family: "Consolas", "Monaco", monospace;
+        background: #0f172a;
+        color: #a7f3d0;
+        padding: 14px 16px;
+        border-radius: var(--radius-sm);
+        font-family: "SF Mono", "Consolas", "Monaco", monospace;
         font-size: 12px;
+        line-height: 1.6;
         white-space: pre;
         overflow-x: auto;
         max-height: 400px;
@@ -663,7 +810,7 @@
         display: inline-block;
         width: 14px;
         height: 14px;
-        border: 2px solid #cbd5e0;
+        border: 2px solid #d8dee7;
         border-top-color: var(--accent);
         border-radius: 50%;
         animation: spin 0.8s linear infinite;
@@ -680,15 +827,19 @@
         position: fixed;
         top: 16px;
         right: 16px;
-        background: #2d3748;
-        color: white;
-        padding: 10px 18px;
-        border-radius: 6px;
-        box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+        background: rgba(15, 23, 42, 0.92);
+        backdrop-filter: blur(8px);
+        color: #f8fafc;
+        padding: 11px 18px;
+        border-radius: 12px;
+        border: 1px solid rgba(255, 255, 255, 0.08);
+        box-shadow: 0 8px 24px rgba(15, 23, 42, 0.25);
         z-index: 9999;
+        font-size: 13px;
         opacity: 0;
         transform: translateY(-16px);
-        transition: all 0.25s;
+        transition: all 0.25s ease;
+        pointer-events: none;
       }
       .toast.show {
         opacity: 1;
@@ -696,10 +847,12 @@
       }
 
       a {
-        color: var(--accent);
+        color: var(--accent-primary);
         text-decoration: none;
+        transition: color 0.15s ease;
       }
       a:hover {
+        color: var(--accent);
         text-decoration: underline;
       }
 
@@ -741,7 +894,7 @@
           top: 0;
           height: 100vh;
           z-index: 100;
-          box-shadow: -4px 0 16px rgba(0, 0, 0, 0.1);
+          box-shadow: -4px 0 16px rgba(16, 24, 40, 0.08);
         }
         .right-toggle-btn {
           position: fixed;
@@ -788,18 +941,18 @@
       }
       .source-modal {
         background: #fff;
-        border-radius: 12px;
+        border-radius: 16px;
         width: 90%;
         max-width: 860px;
         max-height: 85vh;
         display: flex;
         flex-direction: column;
-        box-shadow: 0 20px 60px rgba(0, 0, 0, 0.25);
+        box-shadow: 0 24px 60px rgba(16, 24, 40, 0.18);
         animation: slideUp 0.3s ease;
       }
       .source-modal-header {
         padding: 18px 24px 14px;
-        border-bottom: 1px solid #e2e8f0;
+        border-bottom: 1px solid var(--border);
         display: flex;
         justify-content: space-between;
         align-items: flex-start;
@@ -807,14 +960,14 @@
       }
       .source-modal-title {
         font-size: 16px;
-        font-weight: 600;
-        color: #1e293b;
+        font-weight: 700;
+        color: var(--text-main);
         margin: 0;
         line-height: 1.4;
       }
       .source-modal-meta {
         font-size: 12px;
-        color: #64748b;
+        color: var(--text-muted);
         margin-top: 4px;
       }
       .source-modal-close {
@@ -822,15 +975,15 @@
         border: none;
         cursor: pointer;
         font-size: 22px;
-        color: #94a3b8;
+        color: var(--text-light);
         padding: 4px 8px;
-        border-radius: 6px;
-        transition: all 0.15s;
+        border-radius: 8px;
+        transition: all 0.15s ease;
         line-height: 1;
       }
       .source-modal-close:hover {
         background: #f1f5f9;
-        color: #475569;
+        color: var(--text-secondary);
       }
       .source-modal-body {
         padding: 20px 24px;
@@ -838,13 +991,13 @@
         flex: 1;
         font-size: 14px;
         line-height: 1.8;
-        color: #334155;
+        color: var(--text-secondary);
       }
       .source-modal-body.loading {
         display: flex;
         align-items: center;
         justify-content: center;
-        color: #94a3b8;
+        color: var(--text-light);
       }
       .source-modal-body.error {
         color: #dc2626;
@@ -856,10 +1009,10 @@
         font-family: "SF Mono", "Consolas", "Microsoft YaHei", monospace;
         font-size: 13px;
         line-height: 1.7;
-        background: #f8fafc;
+        background: var(--bg-soft);
         padding: 16px;
-        border-radius: 8px;
-        border: 1px solid #e2e8f0;
+        border-radius: var(--radius-sm);
+        border: 1px solid var(--border);
       }
       /* 表格渲染（PDF 表格文本化后的效果） */
       .source-table {
@@ -870,43 +1023,43 @@
         background: #fff;
       }
       .source-table th {
-        background: #f1f5f9;
-        color: #475569;
+        background: var(--bg-soft);
+        color: var(--text-secondary);
         font-weight: 600;
         padding: 10px 12px;
         text-align: left;
-        border: 1px solid #e2e8f0;
+        border: 1px solid var(--border);
         white-space: nowrap;
       }
       .source-table td {
         padding: 8px 12px;
-        border: 1px solid #e2e8f0;
-        color: #334155;
+        border: 1px solid var(--border);
+        color: var(--text-secondary);
         vertical-align: top;
       }
       .source-table tr:nth-child(even) td {
-        background: #f8fafc;
+        background: #fbfcfe;
       }
       .source-table-wrapper {
         overflow-x: auto;
         margin: 12px 0;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
+        border: 1px solid var(--border);
+        border-radius: var(--radius-sm);
       }
       .source-modal-footer {
         padding: 14px 24px;
-        border-top: 1px solid #e2e8f0;
+        border-top: 1px solid var(--border);
         display: flex;
         justify-content: space-between;
         align-items: center;
         gap: 12px;
         font-size: 12px;
-        color: #64748b;
+        color: var(--text-muted);
       }
       .source-modal-tag {
         display: inline-block;
-        padding: 2px 8px;
-        border-radius: 4px;
+        padding: 2px 10px;
+        border-radius: 999px;
         font-size: 11px;
         font-weight: 600;
         background: #eff6ff;
@@ -914,18 +1067,18 @@
       }
       .source-link {
         cursor: pointer;
-        transition: color 0.15s;
+        transition: color 0.15s ease;
         text-decoration: none;
       }
       .source-link:hover {
-        color: #667eea;
+        color: var(--accent-primary);
         text-decoration: underline;
       }
       .source-link .source-name {
-        color: #1e293b;
+        color: var(--text-main);
       }
       .source-link:hover .source-name {
-        color: #667eea;
+        color: var(--accent-primary);
       }
 
       /* ============================================================ */
@@ -933,7 +1086,11 @@
       /* ============================================================ */
       .tdee-result {
         margin-top: 16px;
-        padding: 0;
+        padding: 16px;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-left: 1px solid var(--border);
+        border-radius: var(--radius);
       }
       .tdee-cards {
         display: grid;
@@ -942,47 +1099,57 @@
         margin-bottom: 16px;
       }
       .tdee-card {
-        background: #f8fafc;
-        border: 1px solid #e2e8f0;
-        border-radius: 8px;
+        background: var(--bg-soft);
+        border: 1px solid var(--border);
+        border-radius: 12px;
         padding: 14px 12px;
         text-align: center;
+        transition:
+          transform 0.18s ease,
+          box-shadow 0.18s ease;
+      }
+      .tdee-card:hover {
+        transform: translateY(-2px);
+        box-shadow: var(--shadow-hover);
       }
       .tdee-card-label {
         font-size: 11px;
-        color: #64748b;
+        font-weight: 600;
+        color: var(--text-muted);
         margin-bottom: 6px;
         text-transform: uppercase;
         letter-spacing: 0.5px;
       }
       .tdee-card-value {
-        font-size: 24px;
+        font-size: 22px;
         font-weight: 700;
-        color: #1e293b;
+        color: var(--text-main);
         line-height: 1.2;
+        font-variant-numeric: tabular-nums;
       }
       .tdee-card-unit {
         font-size: 12px;
-        color: #94a3b8;
+        color: var(--text-light);
         margin-left: 2px;
       }
       .tdee-card.target {
-        background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+        background: linear-gradient(135deg, #10b981 0%, #14b8a6 100%);
         border-color: transparent;
+        box-shadow: 0 4px 12px rgba(16, 185, 129, 0.25);
       }
       .tdee-card.target .tdee-card-value {
         color: #fff;
       }
       .tdee-card.target .tdee-card-label {
-        color: rgba(255, 255, 255, 0.8);
+        color: rgba(255, 255, 255, 0.85);
       }
       .tdee-card.target .tdee-card-unit {
-        color: rgba(255, 255, 255, 0.7);
+        color: rgba(255, 255, 255, 0.75);
       }
       .tdee-section-title {
         font-size: 13px;
         font-weight: 600;
-        color: #475569;
+        color: var(--text-secondary);
         margin: 16px 0 8px;
         display: flex;
         align-items: center;
@@ -994,32 +1161,32 @@
         font-size: 13px;
       }
       .tdee-table th {
-        background: #f1f5f9;
-        color: #475569;
+        background: var(--bg-soft);
+        color: var(--text-muted);
         font-weight: 600;
         padding: 10px 12px;
         text-align: center;
-        border: 1px solid #e2e8f0;
+        border: 1px solid var(--border);
         font-size: 12px;
       }
       .tdee-table td {
         padding: 10px 12px;
-        border: 1px solid #e2e8f0;
-        color: #334155;
+        border: 1px solid var(--border);
+        color: var(--text-secondary);
         text-align: center;
       }
       .tdee-table tr:nth-child(even) td {
-        background: #f8fafc;
+        background: #fbfcfe;
       }
       .tdee-table .num {
         text-align: center;
         font-variant-numeric: tabular-nums;
       }
       .tdee-warn {
-        background: #fef3c7 !important;
+        background: #fffbeb !important;
         color: #92400e;
         padding: 10px 14px;
-        border-radius: 6px;
+        border-radius: var(--radius-sm);
         margin-top: 12px;
         font-size: 13px;
         border: 1px solid #fde68a;
@@ -1028,16 +1195,98 @@
         background: #f0f9ff;
         color: #0369a1;
         padding: 10px 14px;
-        border-radius: 6px;
+        border-radius: var(--radius-sm);
         margin-top: 12px;
         font-size: 13px;
         border: 1px solid #bae6fd;
       }
       .tdee-meta {
         font-size: 11px;
-        color: #94a3b8;
+        color: var(--text-light);
         margin-top: 10px;
         text-align: center;
+      }
+
+      /* ============================================================ */
+      /* 动态内容风格统一（JS 注入的内联样式无法直接修改，              */
+      /* 通过变量定义 + 属性选择器覆盖为品牌色系）                      */
+      /* ============================================================ */
+
+      /* JS 模板中引用的补充变量已在 :root 定义：
+         --bg-soft / --accent-primary / --text-secondary */
+
+      /* 靛蓝色调的表格头 / 统计块 → 品牌翡翠色调 */
+      table tr[style*="rgba(99, 102, 241"] td,
+      table tr[style*="rgba(99, 102, 241"] th {
+        background: transparent !important;
+      }
+      table tr[style*="rgba(99, 102, 241"] {
+        background: linear-gradient(
+          90deg,
+          rgba(16, 185, 129, 0.1),
+          rgba(20, 184, 166, 0.06)
+        ) !important;
+      }
+      div[style*="rgba(99, 102, 241"] {
+        background: rgba(16, 185, 129, 0.1) !important;
+      }
+      summary[style*="rgba(99, 102, 241"] {
+        background: rgba(16, 185, 129, 0.08) !important;
+        border-radius: var(--radius-sm);
+      }
+      span[style*="rgba(99,102,241"] {
+        background: var(--accent-soft) !important;
+        border-color: rgba(16, 185, 129, 0.2) !important;
+      }
+      button[style*="rgba(99,102,241"] {
+        background: var(--grad-primary) !important;
+        border-color: transparent !important;
+        color: #fff !important;
+      }
+
+      /* 深色主题遗留的半透明白底 → 浅色底 */
+      div[style*="rgba(255,255,255,0.05"],
+      div[style*="rgba(255,255,255,0.03"],
+      div[style*="rgba(255,255,255,0.08"] {
+        background: var(--bg-soft) !important;
+      }
+      span[style*="rgba(255,255,255,0.08"] {
+        background: rgba(16, 185, 129, 0.08) !important;
+      }
+      tr[style*="rgba(255,255,255,0.03"] {
+        background: var(--bg-soft) !important;
+      }
+
+      /* 趋势图柱条 → 翡翠渐变 */
+      #trendChart > div > div:nth-child(2) {
+        background: linear-gradient(
+          180deg,
+          #34d399 0%,
+          #0d9488 100%
+        ) !important;
+      }
+
+      /* 彩色实底按钮 / 状态标签确保白字可读 */
+      button.btn[style*="#10b981"],
+      button.btn[style*="rgb(16, 185, 129)"],
+      button.btn-secondary[style*="rgb(16, 185, 129)"],
+      button.btn[style*="#ef4444"],
+      button.btn[style*="rgb(239, 68, 68)"],
+      button.btn-secondary[style*="rgb(239, 68, 68)"] {
+        color: #ffffff !important;
+        border: none;
+      }
+      span[style*="background: #10b981"],
+      span[style*="background: #ef4444"],
+      span[style*="background: #f59e0b"],
+      span[style*="background: #6366f1"],
+      span[style*="background: #64748b"] {
+        color: #ffffff !important;
+      }
+
+      /* 升级提示条边框统一为品牌色 */
+      div[style*="border: 1px solid var(--accent-primary)"] {
+        border-color: rgba(16, 185, 129, 0.35) !important;
       }
     </style>
   </head>
@@ -1077,7 +1326,7 @@
               ><a
                 href="http://localhost:16686"
                 target="_blank"
-                style="color: #93c5fd; font-size: 11px"
+                style="color: var(--accent-primary); font-size: 11px"
                 >UI →</a
               ></span
             >
@@ -1134,6 +1383,14 @@
               onclick="switchTab('profile', this)"
             >
               <span class="nav-icon">👤</span><span>个人中心</span>
+            </div>
+            <div
+              class="nav-item"
+              data-tab="plans"
+              data-roles="user,admin,expert"
+              onclick="switchTab('plans', this)"
+            >
+              <span class="nav-icon">🗓️</span><span>饮食计划</span>
             </div>
             <div
               class="nav-item"
@@ -1586,7 +1843,7 @@
               <div class="form-group">
                 <label
                   >体脂率 (%)
-                  <small style="color: #999; font-weight: normal"
+                  <small style="color: var(--text-light); font-weight: normal"
                     >可选，体脂秤测量</small
                   ></label
                 ><input
@@ -1654,6 +1911,66 @@
                   登录后加载计划列表，或通过 RAG 对话生成新计划...
                 </div>
               </div>
+            </div>
+          </div>
+
+          <!-- 饮食计划 -->
+          <div id="plans" class="panel">
+            <h2>🗓️ 饮食计划</h2>
+            <p class="desc">今日吃什么、整周怎么吃，一目了然（需登录）</p>
+
+            <!-- 未登录提示 -->
+            <div id="plansNotLogin" class="result" style="display: none">
+              🔐 请先登录后使用饮食计划功能
+            </div>
+
+            <!-- 空状态 -->
+            <div id="plansEmpty" style="display: none">
+              <div
+                style="
+                  background: var(--accent-soft);
+                  border: 1px dashed var(--accent);
+                  border-radius: var(--radius);
+                  padding: 32px;
+                  text-align: center;
+                "
+              >
+                <div style="font-size: 36px; margin-bottom: 10px">🥗</div>
+                <div style="font-weight: 700; margin-bottom: 6px">
+                  还没有饮食计划
+                </div>
+                <div
+                  style="
+                    font-size: 13px;
+                    color: var(--text-muted);
+                    margin-bottom: 16px;
+                  "
+                >
+                  去 AI
+                  健康问答发送「帮我生成一个减脂计划」，生成并保存后即可在这里查看每日安排
+                </div>
+                <button class="btn" onclick="switchTab('rag')">
+                  💬 去生成计划
+                </button>
+              </div>
+            </div>
+
+            <!-- 主体内容 -->
+            <div id="plansContent" style="display: none">
+              <div id="planSelectorBar" style="margin-bottom: 14px"></div>
+              <div id="planTodayHeader" style="margin-bottom: 12px"></div>
+              <div
+                id="planDayTabs"
+                style="
+                  display: flex;
+                  gap: 6px;
+                  overflow-x: auto;
+                  padding-bottom: 4px;
+                  margin-bottom: 14px;
+                "
+              ></div>
+              <div id="planMealCards"></div>
+              <div id="planMetaInfo" style="margin-top: 16px"></div>
             </div>
           </div>
 
@@ -1760,8 +2077,8 @@
                   style="
                     background: linear-gradient(
                       135deg,
-                      #6366f1 0%,
-                      #8b5cf6 100%
+                      #0f172a 0%,
+                      #334155 100%
                     );
                     color: white;
                   "
@@ -1895,7 +2212,8 @@
                     align-items: flex-end;
                     gap: 8px;
                     height: 180px;
-                    background: rgba(255, 255, 255, 0.05);
+                    background: var(--bg-soft);
+                    border: 1px solid var(--border);
                     padding: 16px;
                     border-radius: 12px;
                   "
@@ -1924,7 +2242,8 @@
                 <div
                   id="pendingList"
                   style="
-                    background: rgba(255, 255, 255, 0.05);
+                    background: var(--bg-soft);
+                    border: 1px solid var(--border);
                     padding: 12px;
                     border-radius: 12px;
                   "
@@ -2069,6 +2388,7 @@
         tdee: "TDEE 计算",
         auth: "用户认证",
         profile: "个人中心",
+        plans: "饮食计划",
         diet: "饮食记录",
         dashboard: "系统仪表盘",
         monitor: "监控指标",
@@ -2128,6 +2448,7 @@
         if (tabId === "dashboard") refreshDashboard();
         if (tabId === "monitor") loadMetrics();
         if (tabId === "diet") loadDailyDietSummary();
+        if (tabId === "plans") loadPlansPanel();
         if (tabId === "profile") {
           loadProfilePlans();
         }
@@ -2473,51 +2794,315 @@
       }
 
       async function loadPlanDetail(planId) {
-        const r = await apiCall("GET", `/api/v1/plans/${planId}`);
-        console.log(
-          "[loadPlanDetail]",
-          planId,
-          "ok:",
-          r.ok,
-          "r.data keys:",
-          r.data ? Object.keys(r.data) : "n/a",
-        );
-        if (r.ok && r.data) {
-          // 后端返回 {"success":true, "data": {...plan对象...}} —— 注意多一层 data
-          const planObj = r.data.data || r.data;
-          console.log("[loadPlanDetail] planObj keys:", Object.keys(planObj));
-          const cfg = planObj.config || {};
-          // 🆕 过滤掉 days 里的 null 或无 meals 的坏数据
-          const rawDays = cfg.days || planObj.days || [];
-          const daysList = rawDays
+        // 查看历史计划 → 打开独立计划页（不再往聊天流里 append 表格）
+        plansPanelPlanId = planId;
+        switchTab("plans");
+        await loadPlansPanel();
+      }
+
+      // ============================================================
+      // 🗓️ 独立计划页（今日视图 + 整周切换）
+      // ============================================================
+      let plansPanelPlans = []; // 用户全部计划（列表）
+      let plansPanelPlanId = null; // 当前查看的计划 id
+      let plansPanelPlan = null; // 当前计划详情对象
+      let plansPanelDayIdx = 0; // 当前展示第几天（0-based）
+
+      const PLAN_MEAL_META = {
+        breakfast: { label: "早餐", icon: "☀️" },
+        lunch: { label: "午餐", icon: "🍱" },
+        dinner: { label: "晚餐", icon: "🌙" },
+        snack: { label: "加餐", icon: "🥗" },
+      };
+      const PLAN_GOAL_LABELS = {
+        weight_loss: "减脂",
+        muscle_gain: "增肌",
+        maintenance: "维持",
+        health_maintenance: "健康维持",
+      };
+      const PLAN_WEEKDAYS = [
+        "星期日",
+        "星期一",
+        "星期二",
+        "星期三",
+        "星期四",
+        "星期五",
+        "星期六",
+      ];
+
+      function openPlanPage(planId, markUsed) {
+        if (!planId || planId <= 0) {
+          showToast("计划尚未保存，请先登录并保存计划");
+          return;
+        }
+        plansPanelPlanId = planId;
+        if (markUsed && token) {
+          apiCall("POST", "/api/v1/feedback/plan", {
+            plan_id: planId,
+            action: "use_plan",
+          }).catch(() => {});
+        }
+        switchTab("plans");
+        loadPlansPanel();
+      }
+
+      function fmtDateCN(d) {
+        return `${d.getFullYear()}年${d.getMonth() + 1}月${d.getDate()}日 · ${PLAN_WEEKDAYS[d.getDay()]}`;
+      }
+
+      // 根据计划 start_date 计算今天对应第几天（0-based，越界收敛到边界）
+      function plansPanelTodayIdx() {
+        const cfg = (plansPanelPlan && plansPanelPlan.config) || {};
+        const days = cfg.days || [];
+        if (!days.length) return 0;
+        const startStr = plansPanelPlan.start_date;
+        if (!startStr) return 0;
+        const start = new Date(startStr + "T00:00:00");
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const diff = Math.floor((today - start) / 86400000);
+        return Math.max(0, Math.min(diff, days.length - 1));
+      }
+
+      async function loadPlansPanel() {
+        const loginTip = document.getElementById("plansNotLogin");
+        const empty = document.getElementById("plansEmpty");
+        const content = document.getElementById("plansContent");
+        if (!token) {
+          if (loginTip) loginTip.style.display = "";
+          if (empty) empty.style.display = "none";
+          if (content) content.style.display = "none";
+          return;
+        }
+        if (loginTip) loginTip.style.display = "none";
+        if (content) content.style.display = "";
+
+        const r = await apiCall("GET", "/api/v1/plans");
+        plansPanelPlans = (r.data && (r.data.plans || r.data.data)) || [];
+        if (!r.ok || !plansPanelPlans.length) {
+          if (empty) empty.style.display = "";
+          if (content) content.style.display = "none";
+          return;
+        }
+        if (empty) empty.style.display = "none";
+        if (content) content.style.display = "";
+
+        // 选择当前计划：优先已指定，否则取最新 active
+        if (!plansPanelPlanId) {
+          const active = plansPanelPlans.find((p) => p.status === "active");
+          plansPanelPlanId = (active || plansPanelPlans[0]).id;
+        }
+        await fetchPlansPanelDetail();
+        renderPlansPanel();
+      }
+
+      async function selectPlansPanelPlan(planId) {
+        plansPanelPlanId = planId;
+        const cards = document.getElementById("planMealCards");
+        if (cards) cards.innerHTML = '<div class="desc">加载中...</div>';
+        await fetchPlansPanelDetail();
+        renderPlansPanel();
+      }
+
+      async function fetchPlansPanelDetail() {
+        plansPanelPlan = null;
+        plansPanelDayIdx = 0;
+        if (!plansPanelPlanId) return;
+        const r = await apiCall("GET", `/api/v1/plans/${plansPanelPlanId}`);
+        if (!r.ok || !r.data) {
+          showToast("计划加载失败，可能已被删除");
+          plansPanelPlanId = null;
+          return;
+        }
+        const planObj = r.data.data || r.data;
+        planObj.config = planObj.config || {};
+        // 过滤掉无 meals 的坏数据天
+        const cfg = planObj.config;
+        if (Array.isArray(cfg.days)) {
+          cfg.days = cfg.days
             .filter((d) => d && Array.isArray(d.meals))
-            .map((d) => ({ ...d, meals: d.meals.filter((m) => m) }));
-          console.log(
-            "[loadPlanDetail] days raw=",
-            rawDays.length,
-            "filtered=",
-            daysList.length,
+            .map((d) => ({
+              ...d,
+              meals: d.meals.filter((m) => m),
+            }));
+        }
+        plansPanelPlan = planObj;
+        plansPanelDayIdx = plansPanelTodayIdx();
+      }
+
+      function goPlanDay(idx) {
+        plansPanelDayIdx = idx;
+        renderPlansPanel();
+      }
+
+      function renderPlanMealCards(day) {
+        const meals = (day && day.meals) || [];
+        if (!meals.length) {
+          return `<div class="desc">该计划为框架型，暂无每日具体餐单</div>`;
+        }
+        let html = `<div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 12px;">`;
+        for (const meal of meals) {
+          const meta =
+            PLAN_MEAL_META[meal.meal_type] ||
+            (meal.meal_type
+              ? { label: meal.meal_type, icon: "🍽️" }
+              : { label: "餐次", icon: "🍽️" });
+          const items = meal.items || [];
+          const kcal = meal.total_calories ? `${meal.total_calories} kcal` : "";
+          html += `<div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); overflow: hidden;">
+            <div style="display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: var(--grad-primary);">
+              <div style="font-weight: 700; color: #fff; font-size: 14px;">${meta.icon} ${meta.label}${meal.time ? `<span style="font-weight: 400; opacity: 0.85; font-size: 12px; margin-left: 8px;">${meal.time}</span>` : ""}</div>
+              ${kcal ? `<div style="color: #fff; font-size: 13px; font-weight: 600;">约 ${kcal}</div>` : ""}
+            </div>
+            <div style="padding: 6px 14px 10px 14px;">`;
+          if (!items.length) {
+            html += `<div style="padding: 8px 0; color: var(--text-light); font-size: 13px;">暂无食物</div>`;
+          } else {
+            for (const item of items) {
+              html += `<div style="display: flex; align-items: baseline; gap: 8px; padding: 7px 0; border-bottom: 1px dashed var(--border);">
+                <div style="flex: 1; font-size: 13px; color: var(--text-main); font-weight: 500;">${item.food || "?"}</div>
+                <div style="font-size: 12px; color: var(--text-muted);">${item.quantity || "-"}</div>
+                <div style="font-size: 12px; color: var(--accent-primary); font-weight: 600; min-width: 64px; text-align: right;">${item.calories || "?"} kcal</div>
+                ${item.cooking_method ? `<div style="font-size: 11px; color: var(--text-light);">${item.cooking_method}</div>` : ""}
+              </div>`;
+            }
+          }
+          html += `</div></div>`;
+        }
+        html += `</div>`;
+        return html;
+      }
+
+      function renderPlansPanel() {
+        // 计划选择条
+        const bar = document.getElementById("planSelectorBar");
+        if (bar) {
+          bar.innerHTML = plansPanelPlans
+            .slice(0, 8)
+            .map((p) => {
+              const active = p.id === plansPanelPlanId;
+              return `<div onclick="selectPlansPanelPlan(${p.id})" style="display: inline-flex; align-items: center; gap: 6px; padding: 7px 14px; margin: 0 8px 8px 0; border-radius: 999px; font-size: 13px; cursor: pointer; ${
+                active
+                  ? "background: var(--grad-primary); color: #fff; font-weight: 600; box-shadow: var(--shadow-hover);"
+                  : "background: var(--bg-soft); border: 1px solid var(--border); color: var(--text-secondary);"
+              }">📋 计划 #${p.id} · ${PLAN_GOAL_LABELS[p.goal_type] || p.goal_type || "通用"}</div>`;
+            })
+            .join("");
+        }
+
+        const cards = document.getElementById("planMealCards");
+        const tabsEl = document.getElementById("planDayTabs");
+        const headerEl = document.getElementById("planTodayHeader");
+        const metaEl = document.getElementById("planMetaInfo");
+        if (!plansPanelPlan) {
+          if (cards) cards.innerHTML = "";
+          if (tabsEl) tabsEl.innerHTML = "";
+          if (headerEl) headerEl.innerHTML = "";
+          if (metaEl) metaEl.innerHTML = "";
+          return;
+        }
+
+        const cfg = plansPanelPlan.config || {};
+        const days = cfg.days || [];
+        const goalLabel =
+          PLAN_GOAL_LABELS[plansPanelPlan.goal_type] ||
+          plansPanelPlan.goal_type ||
+          "通用";
+        const todayIdx = plansPanelTodayIdx();
+        const diffToday =
+          plansPanelPlan.start_date && days.length
+            ? Math.floor(
+                (new Date().setHours(0, 0, 0, 0) -
+                  new Date(plansPanelPlan.start_date + "T00:00:00").getTime()) /
+                  86400000,
+              )
+            : 0;
+
+        // 今日视图头
+        if (headerEl) {
+          const now = new Date();
+          let statusBadge;
+          if (diffToday < 0) {
+            statusBadge = `<span style="font-size: 12px; padding: 3px 10px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-primary);">📅 ${plansPanelPlan.start_date} 开始，先看看第 1 天</span>`;
+          } else if (diffToday >= days.length && days.length) {
+            statusBadge = `<span style="font-size: 12px; padding: 3px 10px; border-radius: 10px; background: #fff7ed; color: #c2410c;">⏳ 计划周期已结束，显示最后一天</span>`;
+          } else {
+            statusBadge = `<span style="font-size: 12px; padding: 3px 10px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-primary);">🌱 今天是第 ${todayIdx + 1} 天</span>`;
+          }
+          headerEl.innerHTML = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
+            <div style="font-size: 17px; font-weight: 800;">${fmtDateCN(now)}</div>
+            ${statusBadge}
+            <span style="font-size: 12px; padding: 3px 10px; border-radius: 10px; background: var(--bg-soft); border: 1px solid var(--border); color: var(--text-secondary);">${goalLabel}</span>
+            ${cfg.target_calories ? `<span style="font-size: 12px; padding: 3px 10px; border-radius: 10px; background: var(--bg-soft); border: 1px solid var(--border); color: var(--text-secondary);">🎯 目标 ${cfg.target_calories} kcal/天</span>` : ""}
+          </div>`;
+        }
+
+        // 整周 Day 切换条
+        if (tabsEl) {
+          if (days.length > 1) {
+            tabsEl.innerHTML = days
+              .map((d, i) => {
+                const active = i === plansPanelDayIdx;
+                const isToday = i === todayIdx;
+                const label = `第${i + 1}天`;
+                return `<div onclick="goPlanDay(${i})" style="flex: 0 0 auto; padding: 7px 16px; border-radius: 12px; font-size: 13px; cursor: pointer; display: flex; align-items: center; gap: 5px; ${
+                  active
+                    ? "background: var(--grad-primary); color: #fff; font-weight: 600; box-shadow: var(--shadow-hover);"
+                    : "background: var(--bg-soft); border: 1px solid var(--border); color: var(--text-secondary);"
+                }">${label}${isToday ? `<span style="font-size: 10px; padding: 1px 6px; border-radius: 8px; ${active ? "background: rgba(255,255,255,0.25); color: #fff;" : "background: var(--accent); color: #fff;"}">今天</span>` : ""}</div>`;
+              })
+              .join("");
+          } else {
+            tabsEl.innerHTML = "";
+          }
+        }
+
+        // 餐次卡片
+        if (cards) {
+          let day = null;
+          if (days.length) {
+            day = days[plansPanelDayIdx] || days[days.length - 1];
+          } else if (Array.isArray(cfg.meals) && cfg.meals.length) {
+            day = { meals: cfg.meals }; // 兼容旧单日计划
+          }
+          cards.innerHTML = day ? renderPlanMealCards(day) : "";
+        }
+
+        // 计划概览（宏量营养 + 参考指南 + 换菜池提示）
+        if (metaEl) {
+          const macros = cfg.macros || {};
+          const macroChips = [
+            macros.protein_g ? `蛋白质 ${macros.protein_g}g` : "",
+            macros.fat_g ? `脂肪 ${macros.fat_g}g` : "",
+            macros.carbs_g ? `碳水 ${macros.carbs_g}g` : "",
+          ].filter(Boolean);
+          const guides = cfg.source_guidelines || [];
+          const swapPool = cfg.food_swap_pool || {};
+          const swapCats = Object.keys(swapPool).filter(
+            (k) => Array.isArray(swapPool[k]) && swapPool[k].length,
           );
-          // 1. 更新 sidebar
-          updateRightPlan(cfg, planId, planObj.goal_type);
-          // 2. 切到 AI 健康问答 tab（用项目真实的 switchTab 函数！）
-          switchTab("rag");
-          // 3. 渲染完整计划表 —— 🆕 用真实的 renderPlanAsTable 签名！
-          const messageUuid = "load-" + planId + "-" + Date.now();
-          const planHtml = renderPlanAsTable(
-            cfg, // 第1个：完整 config 对象
-            planId, // 第2个：planId 数字
-            planObj.goal_type, // 第3个：goalType
-            messageUuid, // 第4个：messageUuid
-            cfg.duration_hint || "7_days", // 第5个：planDuration
-            cfg.source_guidelines || cfg.guideline_titles || "", // 第6个
-          );
-          appendChat("bot", planHtml, { messageUuid, raw: true });
-          showToast(`✅ 已加载计划 #${planId}`);
-        } else {
-          showToast(
-            `❌ 加载失败: ${(r.data && (r.data.detail || r.data.error)) || r.status || "未知"}`,
-          );
+          metaEl.innerHTML = `<div style="background: var(--bg-soft); border: 1px solid var(--border); border-radius: var(--radius); padding: 14px 16px;">
+            <div style="display: flex; flex-wrap: wrap; gap: 8px; align-items: center;">
+              <span style="font-size: 13px; font-weight: 700; color: var(--text-secondary);">📊 计划概览</span>
+              ${cfg.target_calories ? `<span style="font-size: 12px; background: var(--accent-soft); color: var(--accent-primary); padding: 3px 10px; border-radius: 10px;">热量 ${cfg.target_calories} kcal</span>` : ""}
+              ${macroChips
+                .map(
+                  (t) =>
+                    `<span style="font-size: 12px; background: #fff; border: 1px solid var(--border); color: var(--text-secondary); padding: 3px 10px; border-radius: 10px;">${t}</span>`,
+                )
+                .join("")}
+            </div>
+            ${
+              guides.length
+                ? `<div style="margin-top: 8px; font-size: 12px; color: var(--text-light);">📖 参考：${guides.join("、")}</div>`
+                : ""
+            }
+            ${
+              swapCats.length
+                ? `<div style="margin-top: 8px; font-size: 12px; color: var(--text-light);">🔄 内置 ${swapCats.length} 类换菜食材池（点餐次卡片里的食物可换同类菜，即将上线）</div>`
+                : ""
+            }
+          </div>`;
         }
       }
 
@@ -3761,10 +4346,10 @@
         // 操作按钮
         const hasPlanId = planId && planId > 0;
         const savedText = hasPlanId
-          ? "✅ 计划已保存，可在「个人中心 > 我的计划」查看"
+          ? "✅ 已保存 · 打开计划页可查看每日安排"
           : "⚠️ 计划未保存（需登录后生成才能保存）";
         html += `<div style="display: flex; gap: 10px; margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); flex-wrap: wrap; align-items: center;">
-          <button class="btn" style="background: ${hasPlanId ? "#10b981" : "#6b7280"}; padding: 8px 18px;" ${hasPlanId ? "" : "disabled"} onclick="usePlan(${planId || 0}, '${messageUuid}')">✅ 使用该计划</button>
+          <button class="btn" style="background: ${hasPlanId ? "var(--grad-primary)" : "#6b7280"}; border: none; padding: 8px 18px;" ${hasPlanId ? `onclick="openPlanPage(${planId}, true)"` : "disabled"}>🗓️ 打开计划页</button>
           <button class="btn btn-secondary" style="padding: 8px 18px;" onclick="regeneratePlan()">🔄 重新生成</button>
           ${hasPlanId ? "" : `<button class="btn btn-secondary" style="padding: 8px 18px;" onclick="savePlanManual()">💾 手动保存</button>`}
           <span style="color: var(--text-light); font-size: 12px; line-height: 36px;">${savedText}</span>
@@ -3797,28 +4382,6 @@
         return html;
       }
 
-      async function usePlan(planId, messageUuid) {
-        if (!planId || planId <= 0) {
-          showToast("计划未保存，无法使用。请先登录后重新生成计划");
-          return;
-        }
-        // 提交 use_plan 反馈
-        if (token) {
-          try {
-            await apiCall("POST", "/api/v1/feedback/plan", {
-              plan_id: planId,
-              action: "use_plan",
-            });
-          } catch (e) {}
-        }
-        showToast("已使用该计划！可在个人中心查看");
-        // 切换到个人中心
-        switchTab(
-          "profile",
-          document.querySelector('.nav-item[data-tab="profile"]'),
-        );
-      }
-
       async function savePlanManual() {
         if (!token) {
           showToast("请先登录后保存计划");
@@ -3848,21 +4411,9 @@
           showToast("✅ 计划已保存到「我的计划」");
           // 触发右侧栏个人中心刷新
           loadUserProfile();
-          // 🆕 手动刷新计划列表（右侧 sidebar + 左侧主区域双保险）
+          // 手动刷新计划列表（右侧 sidebar + 计划页双保险）
           if (typeof loadExistingPlans === "function") loadExistingPlans();
-          // 🆕 动态激活最新回答里的"使用该计划"按钮
-          setTimeout(() => {
-            const buttons = document.querySelectorAll(
-              'button[onclick^="usePlan"]',
-            );
-            buttons.forEach((btn) => {
-              if (btn.disabled) {
-                btn.disabled = false;
-                btn.style.background = "#10b981";
-                btn.style.opacity = "1";
-              }
-            });
-          }, 300);
+          if (typeof loadPlansPanel === "function") loadPlansPanel();
         } else {
           let err = r.data?.detail || "保存失败";
           if (typeof r.data === "string") err = r.data;
