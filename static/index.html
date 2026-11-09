@@ -969,6 +969,46 @@
         transform: translateY(-1px);
         box-shadow: var(--shadow-hover);
       }
+      /* 每餐完成打卡 pill */
+      .meal-check-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 4px;
+        padding: 5px 12px;
+        border-radius: 999px;
+        font-size: 12px;
+        font-weight: 600;
+        cursor: pointer;
+        background: var(--bg-soft);
+        border: 1px solid var(--border);
+        color: var(--text-muted);
+        transition: all 0.15s ease;
+        user-select: none;
+      }
+      .meal-check-pill:hover {
+        border-color: var(--accent);
+        color: var(--accent-primary);
+      }
+      .meal-check-pill.done {
+        background: var(--accent-soft);
+        border-color: var(--accent);
+        color: var(--accent-primary);
+      }
+      .meal-check-pill.locked {
+        opacity: 0.55;
+        cursor: not-allowed;
+      }
+      /* 热量进度环卡片 */
+      .progress-ring-card {
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        background: var(--bg-card);
+        border: 1px solid var(--border);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 10px 16px 10px 10px;
+      }
       @keyframes slideUp {
         from {
           transform: translateY(20px);
@@ -3008,6 +3048,17 @@
               </div>`;
             });
           }
+          html += `</div>`;
+          // 每餐完成打卡 pill（仅今日可勾）
+          const mealKey = meal.meal_type || "meal_" + mealIdx;
+          const isToday = dayIdx === plansPanelTodayIdx();
+          const mealDone = (day.completed_meals || []).includes(mealKey);
+          const pillTitle = isToday
+            ? "吃完点这里打卡"
+            : "仅今日（第 " + (plansPanelTodayIdx() + 1) + " 天）可勾选";
+          html += `<div style="display: flex; justify-content: flex-end; padding: 8px 10px; border-top: 1px solid var(--border);">
+            <span class="meal-check-pill ${mealDone ? "done" : isToday ? "" : "locked"}" onclick="toggleMealCheck(${dayIdx}, '${mealKey}')" title="${pillTitle}">${mealDone ? "✓ 已完成" : isToday ? "☐ 标记完成" : "未完成"}</span>
+          </div>`;
           html += `</div></div>`;
         }
         html += `</div>`;
@@ -3070,12 +3121,16 @@
           } else {
             statusBadge = `<span style="font-size: 12px; padding: 3px 10px; border-radius: 10px; background: var(--accent-soft); color: var(--accent-primary);">🌱 今天是第 ${todayIdx + 1} 天</span>`;
           }
-          headerEl.innerHTML = `<div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
-            <div style="font-size: 17px; font-weight: 800;">${fmtDateCN(now)}</div>
-            ${statusBadge}
-            <span style="font-size: 12px; padding: 3px 10px; border-radius: 10px; background: var(--bg-soft); border: 1px solid var(--border); color: var(--text-secondary);">${goalLabel}</span>
-            ${cfg.target_calories ? `<span style="font-size: 12px; padding: 3px 10px; border-radius: 10px; background: var(--bg-soft); border: 1px solid var(--border); color: var(--text-secondary);">🎯 目标 ${cfg.target_calories} kcal/天</span>` : ""}
+          headerEl.innerHTML = `<div style="display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 14px;">
+            <div style="display: flex; flex-wrap: wrap; align-items: center; gap: 10px;">
+              <div style="font-size: 17px; font-weight: 800;">${fmtDateCN(now)}</div>
+              ${statusBadge}
+              <span style="font-size: 12px; padding: 3px 10px; border-radius: 10px; background: var(--bg-soft); border: 1px solid var(--border); color: var(--text-secondary);">${goalLabel}</span>
+              ${cfg.target_calories ? `<span style="font-size: 12px; padding: 3px 10px; border-radius: 10px; background: var(--bg-soft); border: 1px solid var(--border); color: var(--text-secondary);">🎯 目标 ${cfg.target_calories} kcal/天</span>` : ""}
+            </div>
+            <div id="planProgressRing"></div>
           </div>`;
+          loadProgressRing();
         }
 
         // 整周 Day 切换条
@@ -3341,6 +3396,113 @@
         await fetchPlansPanelDetail();
         plansPanelDayIdx = dayIdx; // 保持当前查看的天
         renderPlansPanel();
+      }
+
+      // ============================================================
+      // 📊 热量进度环 + ✅ 每餐完成打卡
+      // ============================================================
+      async function loadProgressRing() {
+        const box = document.getElementById("planProgressRing");
+        if (!box || !plansPanelPlanId) return;
+        box.innerHTML = `<div style="font-size: 12px; color: var(--text-light);">今日进度加载中…</div>`;
+        const r = await apiCall(
+          "GET",
+          `/api/v1/plans/adjustment/today?plan_id=${plansPanelPlanId}`,
+        );
+        if (!r.ok || !r.data || !r.data.success) {
+          box.innerHTML = ""; // 无激活计划/接口异常时静默隐藏
+          return;
+        }
+        const target =
+          r.data.plan_target_calories ||
+          (plansPanelPlan &&
+            plansPanelPlan.config &&
+            plansPanelPlan.config.target_calories) ||
+          0;
+        const intake =
+          (r.data.today_intake && r.data.today_intake.total_calories) || 0;
+        const remaining =
+          r.data.adjustment && r.data.adjustment.remaining_calories;
+        const status = r.data.adjustment && r.data.adjustment.status;
+        const pct = target > 0 ? Math.round((intake / target) * 100) : 0;
+        const over = pct > 100;
+        const R = 30;
+        const C = 2 * Math.PI * R;
+        const dash = (Math.min(pct, 100) / 100) * C;
+        const ringColor = over ? "#f97316" : "var(--accent-primary)";
+        const statusText = over
+          ? `已超出 ${Math.abs(remaining || 0)} kcal`
+          : `还剩 ${remaining != null ? remaining : target - intake} kcal`;
+        const statusColor = over ? "#c2410c" : "var(--text-muted)";
+        box.innerHTML = `<div class="progress-ring-card">
+          <svg width="76" height="76" viewBox="0 0 76 76" style="flex: 0 0 auto;">
+            <circle cx="38" cy="38" r="${R}" fill="none" stroke="var(--border)" stroke-width="7"/>
+            <circle cx="38" cy="38" r="${R}" fill="none" stroke="${ringColor}" stroke-width="7" stroke-linecap="round" stroke-dasharray="${C}" stroke-dashoffset="${C - dash}" transform="rotate(-90 38 38)" style="transition: stroke-dashoffset 0.6s ease;"/>
+            <text x="38" y="36" text-anchor="middle" font-size="15" font-weight="700" fill="var(--text-main)">${pct}%</text>
+            <text x="38" y="50" text-anchor="middle" font-size="9" fill="var(--text-light)">今日热量</text>
+          </svg>
+          <div>
+            <div style="font-size: 14px; font-weight: 700; color: var(--text-main);">${intake} <span style="font-size: 11px; font-weight: 400; color: var(--text-light);">/ ${target} kcal</span></div>
+            <div style="font-size: 12px; color: ${statusColor}; margin-top: 2px;">${statusText}</div>
+            <div style="font-size: 11px; color: var(--text-light); margin-top: 2px;">${over ? "🔥 已超出今日配额" : "🌱 摄入在配额内"}</div>
+          </div>
+        </div>`;
+      }
+
+      async function toggleMealCheck(dayIdx, mealKey) {
+        if (!plansPanelPlan || !plansPanelPlanId) return;
+        if (dayIdx !== plansPanelTodayIdx()) {
+          showToast(
+            `只能勾选今天的餐次（第 ${plansPanelTodayIdx() + 1} 天）`,
+            2500,
+          );
+          return;
+        }
+        const day = plansPanelPlan.config.days[dayIdx];
+        if (!day) return;
+        day.completed_meals = day.completed_meals || [];
+        const idx = day.completed_meals.indexOf(mealKey);
+        const justCompleted = idx < 0;
+        if (justCompleted) day.completed_meals.push(mealKey);
+        else day.completed_meals.splice(idx, 1);
+        const r = await apiCall("PUT", `/api/v1/plans/${plansPanelPlanId}`, {
+          config: plansPanelPlan.config,
+        });
+        if (!r.ok) {
+          if (justCompleted) day.completed_meals.pop();
+          else day.completed_meals.push(mealKey);
+          const detail =
+            (r.data && (r.data.detail || r.data.error)) || "保存失败";
+          showToast(`❌ 打卡失败：${detail}`, 4000);
+          return;
+        }
+        renderPlansPanel();
+        // 全部餐次完成 → 自动日打卡（复用 /checkin；重复打卡后端拒绝则静默提示）
+        const mealKeys = (day.meals || []).map(
+          (m, i) => m.meal_type || "meal_" + i,
+        );
+        if (
+          justCompleted &&
+          mealKeys.length &&
+          mealKeys.every((k) => day.completed_meals.includes(k))
+        ) {
+          const total = day.meals.reduce(
+            (s, m) => s + (m.total_calories || 0),
+            0,
+          );
+          const cr = await apiCall(
+            "POST",
+            `/api/v1/plans/${plansPanelPlanId}/checkin`,
+            {
+              actual_calories: total || null,
+              notes: "计划页全部餐次完成，自动打卡",
+            },
+          );
+          showToast(
+            cr.ok ? "🎉 今日全部餐次完成，已自动打卡！" : "✅ 全部餐次已完成",
+            3000,
+          );
+        }
       }
 
       // ============================================================
