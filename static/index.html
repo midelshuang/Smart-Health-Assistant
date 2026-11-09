@@ -2039,6 +2039,7 @@
             <div id="plansContent" style="display: none">
               <div id="planSelectorBar" style="margin-bottom: 14px"></div>
               <div id="planTodayHeader" style="margin-bottom: 12px"></div>
+              <div id="planCheckinStrip" style="margin-bottom: 14px"></div>
               <div
                 id="planDayTabs"
                 style="
@@ -2886,6 +2887,7 @@
       let plansPanelPlans = []; // 用户全部计划（列表）
       let plansPanelPlanId = null; // 当前查看的计划 id
       let plansPanelPlan = null; // 当前计划详情对象
+      let plansPanelCheckins = []; // 当前计划的日打卡记录（阶段4 热力条）
       let plansPanelDayIdx = 0; // 当前展示第几天（0-based）
 
       const PLAN_MEAL_META = {
@@ -3008,6 +3010,13 @@
         }
         plansPanelPlan = planObj;
         plansPanelDayIdx = plansPanelTodayIdx();
+        // 并行拉取日打卡记录（热力条数据源；失败静默）
+        const cr = await apiCall(
+          "GET",
+          `/api/v1/plans/${plansPanelPlanId}/checkins`,
+        );
+        plansPanelCheckins =
+          cr.ok && cr.data && Array.isArray(cr.data.data) ? cr.data.data : [];
       }
 
       function goPlanDay(idx) {
@@ -3091,6 +3100,8 @@
           if (tabsEl) tabsEl.innerHTML = "";
           if (headerEl) headerEl.innerHTML = "";
           if (metaEl) metaEl.innerHTML = "";
+          const stripEl0 = document.getElementById("planCheckinStrip");
+          if (stripEl0) stripEl0.innerHTML = "";
           return;
         }
 
@@ -3131,6 +3142,7 @@
             <div id="planProgressRing"></div>
           </div>`;
           loadProgressRing();
+          renderCheckinStrip(days);
         }
 
         // 整周 Day 切换条
@@ -3503,6 +3515,102 @@
             3000,
           );
         }
+      }
+
+      // ============================================================
+      // 📅 打卡热力条（阶段4：计划周期内每日完成情况一览）
+      // ============================================================
+      function renderCheckinStrip(days) {
+        const stripEl = document.getElementById("planCheckinStrip");
+        if (!stripEl || !days || !days.length) {
+          if (stripEl) stripEl.innerHTML = "";
+          return;
+        }
+        const startDate = plansPanelPlan.start_date; // "YYYY-MM-DD" 或 null
+        const today = new Date();
+        today.setHours(0, 0, 0, 0);
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, "0")}-${String(today.getDate()).padStart(2, "0")}`;
+        const checkinMap = {};
+        (plansPanelCheckins || []).forEach((c) => {
+          if (c && c.checkin_date) checkinMap[c.checkin_date] = c;
+        });
+        const cells = days.map((d, i) => {
+          const dateStr = startDate
+            ? (() => {
+                const dt = new Date(startDate + "T00:00:00");
+                dt.setDate(dt.getDate() + i);
+                return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+              })()
+            : null;
+          const isFuture = dateStr
+            ? dateStr > todayStr
+            : i > plansPanelTodayIdx();
+          const isToday = dateStr
+            ? dateStr === todayStr
+            : i === plansPanelTodayIdx();
+          const totalMeals = (d.meals || []).length;
+          const doneMeals = (d.completed_meals || []).length;
+          const hasCheckin = !!(dateStr && checkinMap[dateStr]);
+          const allDone = totalMeals > 0 && doneMeals >= totalMeals;
+          let level; // full / partial / missed / future
+          if (isFuture) level = "future";
+          else if (hasCheckin || allDone) level = "full";
+          else if (doneMeals > 0) level = "partial";
+          else level = "missed";
+          const styleMap = {
+            full: "background: var(--grad-primary); color: #fff; border: none; box-shadow: var(--shadow);",
+            partial:
+              "background: var(--accent-soft); border: 1px solid var(--accent); color: var(--accent-primary);",
+            missed:
+              "background: #fef2f2; border: 1px dashed #fca5a5; color: #b91c1c;",
+            future:
+              "background: var(--bg-soft); border: 1px solid var(--border); color: var(--text-light); opacity: 0.6;",
+          };
+          const mark = level === "full" ? "✓" : level === "missed" ? "✗" : "";
+          const mealText =
+            level === "partial" ? `${doneMeals}/${totalMeals}` : mark;
+          return `<div onclick="goPlanDay(${i})" title="第 ${i + 1} 天${dateStr ? `（${dateStr}）` : ""}：${
+            level === "full"
+              ? "已全部完成"
+              : level === "partial"
+                ? `完成 ${doneMeals}/${totalMeals} 餐`
+                : level === "missed"
+                  ? "未完成"
+                  : "未开始"
+          }${hasCheckin ? " · 已日打卡" : ""}" style="min-width: 64px; flex: 1; padding: 8px 6px; border-radius: 12px; text-align: center; cursor: pointer; transition: transform 0.15s ease; ${styleMap[level]}">
+            <div style="font-size: 11px; font-weight: 600;">第${i + 1}天</div>
+            <div style="font-size: 16px; font-weight: 800; margin: 2px 0;">${mealText || (isToday ? "今" : "·")}</div>
+            <div style="font-size: 10px; opacity: 0.8;">${dateStr ? dateStr.slice(5) : isToday ? "今天" : ""}</div>
+          </div>`;
+        });
+        const doneCount = days.filter((d, i) => {
+          const total = (d.meals || []).length;
+          return (
+            total > 0 &&
+            ((d.completed_meals || []).length >= total ||
+              (startDate &&
+                checkinMap[
+                  (() => {
+                    const dt = new Date(startDate + "T00:00:00");
+                    dt.setDate(dt.getDate() + i);
+                    return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}-${String(dt.getDate()).padStart(2, "0")}`;
+                  })()
+                ]))
+          );
+        }).length;
+        stripEl.innerHTML = `<div style="background: var(--bg-card); border: 1px solid var(--border); border-radius: var(--radius); box-shadow: var(--shadow); padding: 12px 14px;">
+          <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px;">
+            <div style="font-size: 13px; font-weight: 700; color: var(--text-main);">📅 执行打卡概览</div>
+            <div style="font-size: 12px; color: var(--text-muted);">已完成 <b style="color: var(--accent-primary);">${doneCount}</b> / ${days.length} 天</div>
+          </div>
+          <div style="display: flex; gap: 8px;">${cells.join("")}</div>
+          <div style="display: flex; gap: 14px; margin-top: 10px; font-size: 11px; color: var(--text-light); flex-wrap: wrap;">
+            <span>✓ 已全部完成</span>
+            <span>x/y 部分完成</span>
+            <span>✗ 过去未完成</span>
+            <span>灰色 = 未开始（点击格子可跳转对应天）</span>
+          </div>
+        </div>`;
       }
 
       // ============================================================
