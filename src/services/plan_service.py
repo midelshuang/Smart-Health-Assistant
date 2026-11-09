@@ -165,6 +165,29 @@ def _build_plan_prompts(plan_duration: PlanDuration):
         '      ]\n'
         '    }}\n'
     )
+    # 🆕 Day 3 示例：食材与 Day1/Day2 全不同 → 让 LLM 看到"连续 3 天全天不同"的模式，
+    # 否则 LLM 只学到"早餐要变"，Day4-7 的午餐晚餐会照搬 Day1
+    DAY_THREE_EXAMPLE = (
+        '    {{\n'
+        '      "day": 3, "day_label": "周三",\n'
+        '      "meals": [\n'
+        '        {{"meal_type":"breakfast","time":"07:30","items":[\n'
+        '          {{"food":"蒸紫薯","quantity":"120g","calories":110,"cooking_method":"蒸"}},\n'
+        '          {{"food":"无糖豆浆","quantity":"300ml","calories":80,"cooking_method":"煮"}},\n'
+        '          {{"food":"凉拌黄瓜","quantity":"150g","calories":30,"cooking_method":"凉拌"}}],\n'
+        '         "total_calories":220}},\n'
+        '        {{"meal_type":"lunch","time":"12:00","items":[\n'
+        '          {{"food":"荞麦面","quantity":"100g","calories":130,"cooking_method":"煮"}},\n'
+        '          {{"food":"卤牛肉片","quantity":"100g","calories":190,"cooking_method":"卤制"}},\n'
+        '          {{"food":"清炒芦笋","quantity":"150g","calories":45,"cooking_method":"快炒"}}],\n'
+        '         "total_calories":365}},\n'
+        '        {{"meal_type":"dinner","time":"18:30","items":[\n'
+        '          {{"food":"蒸山药","quantity":"150g","calories":90,"cooking_method":"蒸"}},\n'
+        '          {{"food":"番茄龙利鱼汤","quantity":"400g","calories":140,"cooking_method":"煮"}}],\n'
+        '         "total_calories":230}}\n'
+        '      ]\n'
+        '    }}\n'
+    )
 
     # --- 不同时长的差异化配置 ---
     if plan_duration == "1_day":
@@ -210,7 +233,7 @@ def _build_plan_prompts(plan_duration: PlanDuration):
             "制定个性化的**完整一周（7天）饮食计划**。\n\n"
             + COMMON_RULES
             + "8. 本次必须生成完整 DAY 1-7，每天至少早餐+午餐+晚餐三个餐次\n"
-               "9. 7 天的食物必须多样化，避免连续两天重复相同的主菜\n"
+               "9. 7 天的午餐和晚餐必须每天更换主菜（蛋白质来源不得重复超过 1 次），主食和蔬菜也要每天换新\n"
                "10. 输出 JSON 合法，days 数组长度 = 7，每个 day.meals 长度 >= 3\n"
                "11. 不要省略任何一天的任何一餐，哪怕前几天写得很长，也要完整写满 7 天\n"
                "12. source_guidelines 必须**严格使用【权威指南参考】下方给出的指南名称**，禁止编造或照搬模板示例\n"
@@ -229,21 +252,23 @@ def _build_plan_prompts(plan_duration: PlanDuration):
             '  "target_calories": 1800,\n'
             '  "macros": {{{{"protein_g": 90, "fat_g": 60, "carbs_g": 220}}}},\n'
             '  "days": [\n'
-            # 🆕 Day 1 和 Day 2 用**完全不同的食材**示例 → 让 LLM 学到"每天不一样"的模式
+            # 🆕 3 天示例食材互不相同 → 让 LLM 学到"每天全天不一样"的模式，而不是只换早餐
             + ONE_DAY_EXAMPLE
             + ","
             + DAY_TWO_EXAMPLE
+            + ","
+            + DAY_THREE_EXAMPLE
             + '  ],\n'
             '  "advice": "总体饮食建议，引用指南中的具体原则。",\n'
             '  "precautions": "注意事项，含过敏/疾病提醒。",\n'
             '  "source_guidelines": [{guideline_titles_json}]\n'
             "}}}}\n"
             "【强制要求 - 严格遵守否则无法生成】\n"
-            "1. 上面模板示例写了 2 天（周一鸡胸+周二鲈鱼，食材完全不同），你必须完整写满 **DAY 1-7 共 7 天**\n"
+            "1. 上面模板示例写了 3 天（周一鸡胸/周二鲈鱼/周三牛肉，三天午餐晚餐完全不同），你必须完整写满 **DAY 1-7 共 7 天**\n"
             "2. day_label 依次使用：周一/周二/周三/周四/周五/周六/周日\n"
             "3. 每天至少 3 餐：breakfast、lunch、dinner，可另加 snack 加餐\n"
-            "4. 7 天食物必须多样化：周一鸡胸→周二鱼→周三牛肉→周四虾→周五豆腐→周六鸡肉→周日菌菇（参考这个轮换节奏）\n"
-            "5. ⚠️ 严禁连续两天出现相同主菜/主食/主要蔬菜，每天都必须换成新食材！\n"
+            "4. 7 天午餐主菜硬性轮换：DAY1 鸡胸→DAY2 鲈鱼→DAY3 牛肉→DAY4 虾仁→DAY5 鸭肉或三文鱼→DAY6 豆腐或鸡蛋→DAY7 菌菇或瘦猪肉；DAY4-7 的主食和蔬菜也必须换用全新食材（如藜麦/荞麦面/玉米/山药轮换，芦笋/海带/木耳/番茄轮换），禁止照抄前面任何一天\n"
+            "5. ⚠️ 严禁任何两天的午餐或晚餐食物组合相同或高度雷同（同一主菜 7 天内最多出现 1 次），每天都必须换新食材！\n"
             "6. 每天的 items 里 food/quantity/calories/cooking_method 四个字段**每个都必须填**\n"
             "7. 不要写 recipe_steps 字段（不输出烹饪步骤，节省 token）\n"
             "- 输出只有 JSON，不要任何解释文字，不要开头说「好的，为您生成...」\n"
@@ -292,9 +317,12 @@ def _build_plan_prompts(plan_duration: PlanDuration):
             '    "低卡饮品": ["无糖豆浆","乌龙茶","黑咖啡","无糖气泡水","绿茶",...]\n'
             '  }},\n'
             '  "days": [\n'
+            # 🆕 3 天示例 → 第一周基准周不重复（与 7_days 模板同款修法）
             + ONE_DAY_EXAMPLE
             + ","
             + DAY_TWO_EXAMPLE
+            + ","
+            + DAY_THREE_EXAMPLE
             + '  ],\n'
             '  "advice": "月度总体饮食建议，引用指南原则；说明如何用换菜池实现4周不重复（例如：每周固定餐次替换，每餐只换1-2种食材）",\n'
             '  "precautions": "注意事项，含过敏/疾病提醒及各类食物禁忌",\n'
@@ -302,11 +330,145 @@ def _build_plan_prompts(plan_duration: PlanDuration):
             "}}}}\n"
             "【强制要求 - 两项都必须有！】\n"
             "- ✅ days 必须 = 7 条（DAY 1-7，完整周基准食谱，day_label=周一~周日，每天至少 3 餐）\n"
+            "- ✅ 7 天午餐/晚餐主菜每天换新（DAY1 鸡胸→DAY2 鲈鱼→DAY3 牛肉→DAY4 虾仁→DAY5 鸭肉或三文鱼→DAY6 豆腐或鸡蛋→DAY7 菌菇或瘦猪肉），严禁任何两天午餐或晚餐组合相同\n"
             "- ✅ food_swap_pool 必须 >= 6 个类别，每类 5-10 个具体食物名\n"
             "- ⚠️ 任何一项缺失都算失败，必须重新生成\n"
             "- 输出只有 JSON，不要任何解释文字"
         )
         return system_prompt, user_template
+
+
+# ============================================================
+# 计划餐次多样性兜底（确定性后处理，零 LLM 成本）
+# 背景：LLM 生成 7 天计划时经常"只换早餐，午晚餐照抄 Day1"，
+# 3 天示例 + 强制轮换要求能显著降低概率，但无法根除 → 签名检测兜底。
+# ============================================================
+
+_MEAL_CATEGORY_KEYWORDS = {
+    "主食": ["米", "饭", "面", "馒头", "面包", "红薯", "紫薯", "薯", "玉米", "燕麦", "藜麦", "小米", "杂粮", "粥", "地瓜", "山药", "荞麦"],
+    "汤品": ["汤", "羹"],
+    "蛋白": ["鸡胸", "鸡", "蛋", "鱼", "虾", "肉", "牛肉", "豆腐", "鸭", "瘦", "里脊", "三文鱼", "鲈鱼", "龙利", "鱿鱼"],
+    "蔬菜": ["菜", "花", "瓜", "茄", "笋", "菇", "椒", "菠菜", "西兰花", "番茄", "南瓜", "胡萝卜", "油麦菜", "黄瓜", "芦笋", "木耳", "海带", "紫菜"],
+}
+
+# 每类的替代食材池（减脂友好；30_days 计划会用 food_swap_pool 扩充）
+_MEAL_CATEGORY_ALTS = {
+    "主食": ["糙米饭", "燕麦粥", "藜麦饭", "小米饭", "蒸红薯", "蒸紫薯", "玉米棒", "杂粮馒头", "全麦面包片", "荞麦面", "蒸山药"],
+    "蛋白": ["清蒸鲈鱼", "香煎三文鱼", "白灼虾仁", "卤牛肉片", "嫩豆腐", "煎鸡胸肉", "清炖鸭肉", "酱焖瘦猪肉", "白灼鱿鱼"],
+    "蔬菜": ["凉拌菠菜", "清炒西兰花", "蒜蓉油麦菜", "清蒸南瓜", "番茄炒蛋", "清炒胡萝卜丝", "凉拌黄瓜", "蒜蓉茄子", "清炒芦笋", "凉拌木耳", "蒜蓉海带丝"],
+    "汤品": ["紫菜蛋花汤", "番茄豆腐汤", "冬瓜虾皮汤", "菠菜蛋花汤", "番茄龙利鱼汤", "菌菇鸡汤"],
+}
+
+# food_swap_pool 类别 → 语义类别映射（月度计划扩充替代池用）
+_MEAL_SWAP_POOL_KEY_MAP = {
+    "主食替代": "主食",
+    "优质蛋白替代": "蛋白",
+    "蔬菜替代": "蔬菜",
+    "低卡饮品": "汤品",
+}
+
+
+def _classify_plan_food(food_name):
+    """食材名 → 语义类别（主食/汤品/蛋白/蔬菜），未匹配按蔬菜处理"""
+    if not food_name:
+        return None
+    for cat, keywords in _MEAL_CATEGORY_KEYWORDS.items():
+        for kw in keywords:
+            if kw in food_name:
+                return cat
+    return "蔬菜"
+
+
+def _meal_food_signature(meal):
+    """一餐的食物名集合签名（用于检测两天同餐次是否完全照搬）"""
+    foods = [
+        (it or {}).get("food")
+        for it in (meal.get("items") or [])
+        if it
+    ]
+    return tuple(sorted(f for f in foods if f))
+
+
+def _pick_alt_food(cat, orig, used_foods, pools):
+    """从替代池挑一个新食材：优先选同餐次计划内未出现过的，兜底选任意不同的"""
+    pool = pools.get(cat) or pools["蔬菜"]
+    for alt in pool:
+        if alt != orig and alt not in used_foods:
+            return alt
+    for alt in pool:
+        if alt != orig:
+            return alt
+    return None
+
+
+def _ensure_meal_diversity(plan_config):
+    """
+    餐次级多样性兜底：任何两天同餐次的食物组合完全相同 → 变异重复餐次。
+
+    策略：按 meal_type 分组签名，出现 >=2 次的组保留第一处、其余整餐逐 item
+    从语义类别替代池换成新食材（保留原份量/热量框架，只换名字）。
+    返回变异的餐次数。
+    """
+    import logging as _logging
+
+    _logger = _logging.getLogger(__name__)
+    days = plan_config.get("days") or []
+    if len(days) < 2:
+        return 0
+
+    # 30_days 计划用 food_swap_pool 扩充替代池
+    swap_pool = plan_config.get("food_swap_pool") or {}
+    pools = {cat: list(alts) for cat, alts in _MEAL_CATEGORY_ALTS.items()}
+    for pool_key, cat in _MEAL_SWAP_POOL_KEY_MAP.items():
+        items = swap_pool.get(pool_key)
+        if isinstance(items, list):
+            pools.setdefault(cat, [])
+            pools[cat].extend(x for x in items if x not in pools[cat])
+
+    # 收集每个餐次在全计划中已用的食物（变异优先选未出现过的）
+    foods_by_meal_type = {}
+    for d in days:
+        for m in (d.get("meals") or []):
+            if not m:
+                continue
+            mt = m.get("meal_type") or "unknown"
+            s = foods_by_meal_type.setdefault(mt, set())
+            for it in (m.get("items") or []):
+                if it and it.get("food"):
+                    s.add(it["food"])
+
+    fixed_meals = 0
+    for mt in list(foods_by_meal_type.keys()):
+        groups = {}
+        for d in days:
+            for m in (d.get("meals") or []):
+                if not m or (m.get("meal_type") or "unknown") != mt:
+                    continue
+                sig = _meal_food_signature(m)
+                if sig:
+                    groups.setdefault(sig, []).append(m)
+        for sig, meals in groups.items():
+            if len(meals) < 2:
+                continue
+            for meal in meals[1:]:
+                changed = False
+                for it in (meal.get("items") or []):
+                    if not it or not it.get("food"):
+                        continue
+                    orig = it["food"]
+                    alt = _pick_alt_food(
+                        _classify_plan_food(orig), orig, foods_by_meal_type[mt], pools
+                    )
+                    if alt:
+                        it["food"] = alt
+                        foods_by_meal_type[mt].add(alt)
+                        changed = True
+                if changed:
+                    fixed_meals += 1
+                    _logger.info(
+                        f"🌱 多样性兜底: {mt} 重复组合({ '/'.join(sig) }) → 已变异"
+                    )
+    return fixed_meals
 
 
 def _format_user_profile(profile: Dict[str, Any]) -> str:
@@ -959,93 +1121,13 @@ def generate_plan(
                 _days.append(_copy)
             plan_config["days"] = _days
 
-    # 🆕 7天兜底：如果 7 天内容高度重复（LLM 偷懒）→ 按语义类别自动变异！
-    if len(plan_config.get("days", [])) >= 7:
-        import re as _re
-        _days = plan_config["days"]
-        _logger = __import__("logging").getLogger(__name__)
-
-        # === 语义类别关键词映射（不用精确匹配！）===
-        _CATEGORY_KEYWORDS = {
-            "主食": ["米", "饭", "面", "馒头", "面包", "红薯", "玉米", "燕麦", "藜麦", "小米", "杂粮", "粥", "糙米", "地瓜"],
-            "蛋白": ["鸡胸", "鸡", "蛋", "鱼", "虾", "肉", "牛肉", "豆腐", "豆", "鸭", "瘦", "里脊", "三文鱼", "鲈鱼"],
-            "蔬菜": ["菜", "花", "瓜", "茄", "笋", "菇", "椒", "豆", "菠菜", "西兰花", "番茄", "南瓜", "胡萝卜", "油麦菜", "黄瓜", "茄子"],
-            "汤品": ["汤", "羹", "粥"],
-        }
-        # === 每类的替代食材池（减脂友好）===
-        _CATEGORY_ALTS = {
-            "主食": ["糙米饭", "燕麦粥", "藜麦饭", "小米饭", "蒸红薯", "玉米棒", "杂粮馒头", "全麦面包片"],
-            "蛋白": ["清蒸鲈鱼", "香煎三文鱼", "白灼虾仁", "卤牛肉片", "嫩豆腐", "煎鸡胸肉", "水煮蛋", "清炖鸭肉"],
-            "蔬菜": ["凉拌菠菜", "清炒西兰花", "蒜蓉油麦菜", "清蒸南瓜", "番茄炒蛋", "清炒胡萝卜丝", "凉拌黄瓜", "蒜蓉茄子"],
-            "汤品": ["紫菜蛋花汤", "番茄豆腐汤", "冬瓜虾皮汤", "菠菜蛋花汤"],
-        }
-
-        def _classify_food(food_name):
-            """食材名 → 语义类别"""
-            if not food_name:
-                return None
-            for cat, keywords in _CATEGORY_KEYWORDS.items():
-                for kw in keywords:
-                    if kw in food_name:
-                        return cat
-            return None  # 不在任何类别 → 当作蔬菜处理
-
-        def _food_signature(day):
-            """计算一天的食材签名（用于检测是否相同）"""
-            sig = []
-            for m in (day.get("meals") or []):
-                for it in (m.get("items") or []):
-                    if it and it.get("food"):
-                        sig.append(it["food"])
-            return tuple(sorted(sig))
-
-        # 检测有多少天完全相同
-        _sigs = [_food_signature(d) for d in _days]
-        _unique_count = len(set(_sigs))
-        _logger.info(f"🌱 7天计划去重检测: unique_days={_unique_count}/7")
-
-        _changed_total = 0
-        # 从 Day2 开始，每天替换 2-3 种食材（覆盖不同餐次）
-        for _i, _day in enumerate(_days[1:], start=1):
-            _meals = _day.get("meals", []) or []
-            _day_changed = 0
-            # 遍历所有餐次所有食材
-            for _meal_idx, _meal in enumerate(_meals):
-                if _day_changed >= 2:  # 每天至少改 2 项
-                    break
-                _items = _meal.get("items", []) or []
-                for _item_idx, _item in enumerate(_items):
-                    if _day_changed >= 2:
-                        break
-                    if not _item or not _item.get("food"):
-                        continue
-                    _orig = _item["food"]
-                    _cat = _classify_food(_orig) or "蔬菜"
-                    _pool = _CATEGORY_ALTS.get(_cat, _CATEGORY_ALTS["蔬菜"])
-                    # 找一个不同的替代
-                    for _attempt in range(len(_pool)):
-                        _alt = _pool[(_attempt + _i * 2 + _meal_idx) % len(_pool)]
-                        if _alt != _orig and _alt not in [
-                            it.get("food") for m2 in _meals for it in (m2.get("items") or []) if it
-                        ]:
-                            _item["food"] = _alt
-                            _day_changed += 1
-                            _changed_total += 1
-                            break
-
-        if _changed_total > 0:
-            _logger.info(f"🌱 7天计划去重变异完成：共替换 {_changed_total} 处食材，让每天不同")
-            # 重算每天热量
-            for _day in _days:
-                _total = sum(
-                    (m.get("total_calories") or sum((it.get("calories") or 0) for it in m.get("items", []) if it))
-                    for m in _day.get("meals", []) if m
-                )
-                if _total > 0:
-                    _day["_auto_total"] = _total
-            # 再次检查 unique 数
-            _new_sigs = [_food_signature(d) for d in _days]
-            _logger.info(f"🌱 变异后 unique_days={len(set(_new_sigs))}/7")
+    # 🆕 餐次多样性兜底：任何两天同餐次组合完全相同（LLM 偷懒照抄）→ 确定性变异修复
+    if plan_duration in ("7_days", "30_days"):
+        _fixed = _ensure_meal_diversity(plan_config)
+        if _fixed > 0:
+            logger.warning(
+                f"🌱 餐次多样性兜底触发: {plan_duration} 共变异 {_fixed} 个重复餐次"
+            )
 
     # 🆕 月度兜底：food_swap_pool 缺失则自动补默认换菜池
     if plan_duration == "30_days" and not plan_config.get("food_swap_pool"):
